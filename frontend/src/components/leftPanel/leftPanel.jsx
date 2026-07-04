@@ -1,20 +1,11 @@
 import './leftPanel.css'
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 
-const Sidebar = ({ 
-  onFetchAiImage, 
-  onStartFlight, 
-  onUploadFolderForMetashape,
-  onUploadSingleForAI,
-  onClearImage,
-  onDownloadImage,
-  hasImage,
-  isLoading 
-}) => {
+const Sidebar = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
-  const folderInputRef = useRef(null);
-  const singleFileInputRef = useRef(null);
+  const location = useLocation();
 
   const toggleSidebar = () => {
     if (!isOpen) {
@@ -26,67 +17,11 @@ const Sidebar = ({
     }
   };
 
-  const handleStartFlight = async () => {
-    if (typeof onStartFlight === 'function') {
-      await onStartFlight();
-    }
-    closeSidebar();
-  };
-
   const closeSidebar = () => {
-    setIsOpen(false);
-    setTimeout(() => setIsVisible(false), 300);
-  };
-
-  const handleRequestAiImage = async () => {
-    if (typeof onFetchAiImage === 'function') {
-      await onFetchAiImage();
+    if(isOpen) {
+        setIsOpen(false);
+        setTimeout(() => setIsVisible(false), 300);
     }
-    closeSidebar();
-  };
-
-  const handleUploadFolderClick = () => {
-    folderInputRef.current?.click();
-  };
-
-  const handleFolderChange = async (event) => {
-    const files = event.target.files;
-    if (files && files.length > 0 && typeof onUploadFolderForMetashape === 'function') {
-      await onUploadFolderForMetashape(files);
-    }
-    // Сброс input для возможности повторной загрузки тех же файлов
-    if (folderInputRef.current) {
-      folderInputRef.current.value = '';
-    }
-    closeSidebar();
-  };
-
-  const handleUploadSingleClick = () => {
-    singleFileInputRef.current?.click();
-  };
-
-  const handleSingleFileChange = async (event) => {
-    const file = event.target.files?.[0];
-    if (file && typeof onUploadSingleForAI === 'function') {
-      await onUploadSingleForAI(file);
-    }
-    // Сброс input для возможности повторной загрузки того же файла
-    if (singleFileInputRef.current) {
-      singleFileInputRef.current.value = '';
-    }
-    closeSidebar();
-  };
-
-  const handleClearClick = () => {
-    onClearImage();
-    closeSidebar();
-  };
-
-  const handleDownloadClick = () => {
-    if (typeof onDownloadImage === 'function') {
-      onDownloadImage();
-    }
-    closeSidebar();
   };
 
   useEffect(() => {
@@ -98,6 +33,11 @@ const Sidebar = ({
     document.addEventListener('keydown', handleEsc);
     return () => document.removeEventListener('keydown', handleEsc);
   }, [isOpen]);
+
+  useEffect(() => {
+    // Close sidebar on route change
+    closeSidebar();
+  }, [location.pathname]);
 
   return (
     <>
@@ -135,68 +75,22 @@ const Sidebar = ({
             </button>
           </div>
 
-          <div className="image-upload">
-            <input
-              type="file"
-              ref={folderInputRef}
-              onChange={handleFolderChange}
-              accept="image/*"
-              multiple
-              style={{ display: 'none' }}
-            />
-            <input
-              type="file"
-              ref={singleFileInputRef}
-              onChange={handleSingleFileChange}
-              accept="image/*"
-              style={{ display: 'none' }}
-            />
-            <button 
-              className="upload-btn upload-btn--folder" 
-              onClick={handleUploadFolderClick}
-              disabled={isLoading}
-            >
-              {isLoading ? 'Обрабатываем…' : 'Загрузить папку (Metashape)'}
-            </button>
-            <button 
-              className="upload-btn upload-btn--single" 
-              onClick={handleUploadSingleClick}
-              disabled={isLoading}
-            >
-              {isLoading ? 'Обрабатываем…' : 'Загрузить фото (AI)'}
-            </button>
-            <button 
-              className="upload-btn" 
-              onClick={handleRequestAiImage}
-              disabled={isLoading}
-            >
-              {isLoading ? 'Загружаем…' : 'Загрузить изображение'}
-            </button>
-            {hasImage && (
-              <button 
-                className="download-btn" 
-                onClick={handleDownloadClick}
-                disabled={isLoading}
-              >
-                Скачать изображение
-              </button>
-            )}
-            <button className="clear-btn" onClick={handleClearClick}>
-              Очистить изображение
-            </button>
-          </div>
-
           <nav className="sidebar__nav">
             <ul className="sidebar__menu">
               <li className="sidebar__item">
-                <button 
-                  className="sidebar__link sidebar__link--button" 
-                  onClick={handleStartFlight}
-                  disabled={isLoading}
-                >
-                  <span className="sidebar__icon"></span>
-                  <span className="sidebar__text">Старт полёта</span>
-                </button>
+                <Link to="/" className="sidebar__link">
+                  <span className="sidebar__text">Главная</span>
+                </Link>
+              </li>
+              <li className="sidebar__item">
+                <Link to="/start" className="sidebar__link">
+                  <span className="sidebar__text">Старт полёта (Нейросеть)</span>
+                </Link>
+              </li>
+              <li className="sidebar__item">
+                <Link to="/result" className="sidebar__link">
+                  <span className="sidebar__text">Результаты (3D и Фото)</span>
+                </Link>
               </li>
             </ul>
           </nav>
