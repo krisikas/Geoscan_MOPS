@@ -1,34 +1,29 @@
 import React from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import './Sidebar.css';
-import logoB from '../../assets/logo_b.svg';
-import logoW from '../../assets/logo_w.svg';
+import { LogOut } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 
 export default function Sidebar({ theme, onToggleTheme }) {
-  const logo = theme === 'dark' || !theme ? logoW : logoB;
+  const { logout, user } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate('/');
+  };
 
   return (
     <aside className="app-sidebar">
       <div className="sidebar-top">
         <div className="brand">
-          <img src={logo} alt="GEOSCAN MOPS" className="brand-logo" />
+          {/* Fallback text if image doesn't load */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '18px', fontWeight: 'bold' }}>MOPS</span>
+          </div>
         </div>
         
         <nav className="nav-menu">
-          <NavLink 
-            to="/" 
-            className={({ isActive }) => `nav-item ${isActive ? 'nav-item--active' : ''}`}
-            end
-          >
-            <span className="nav-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
-                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-              </svg>
-            </span>
-            <span className="nav-label">Гайд</span>
-          </NavLink>
-          
           <NavLink 
             to="/start" 
             className={({ isActive }) => `nav-item ${isActive ? 'nav-item--active' : ''}`}
@@ -40,7 +35,7 @@ export default function Sidebar({ theme, onToggleTheme }) {
                 <line x1="12" y1="22.08" x2="12" y2="12"/>
               </svg>
             </span>
-            <span className="nav-label">Нейросеть</span>
+            <span className="nav-label">Полет (ИИ)</span>
           </NavLink>
           
           <NavLink 
@@ -94,6 +89,13 @@ export default function Sidebar({ theme, onToggleTheme }) {
             </>
           )}
         </button>
+
+        {user && (
+          <button className="logout-btn theme-toggle" onClick={handleLogout} style={{ marginTop: '8px', color: 'var(--color-error)' }}>
+            <LogOut size={18} />
+            <span>Выйти ({user.name})</span>
+          </button>
+        )}
       </div>
     </aside>
   );

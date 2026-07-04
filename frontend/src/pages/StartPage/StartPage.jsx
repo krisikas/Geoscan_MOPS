@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import './StartPage.css';
+import { Send, Map, Crosshair, Play } from 'lucide-react';
 
 export default function StartPage({ onStartFlight, loadingMessage, infoMessage, error }) {
   const [chatInput, setChatInput] = useState('');
   const [messages, setMessages] = useState([
-    { role: 'ai', text: 'Привет! Я нейросеть МОПС. Подключена по протоколу MCP к дрону. Какой маршрут сканирования вам предложить?' }
+    { role: 'ai', text: 'Система ИИ инициализирована. Подключена к БПЛА по протоколу MCP. Какой объект планируем обследовать сегодня?' }
   ]);
+  const [hasRoute, setHasRoute] = useState(false);
 
   const handleSendMessage = () => {
     if (!chatInput.trim()) return;
@@ -18,54 +20,78 @@ export default function StartPage({ onStartFlight, loadingMessage, infoMessage, 
     setTimeout(() => {
       setMessages(prev => [...prev, { 
         role: 'ai', 
-        text: 'Поняла вас. Сгенерировала оптимальный маршрут для облета здания. Ознакомьтесь с ним на панели справа и подтвердите.' 
+        text: 'Параметры приняты. Оптимальный маршрут полета построен. Проверьте визуализацию на панели справа перед началом выполнения.' 
       }]);
-    }, 1000);
+      setHasRoute(true);
+    }, 1500);
   };
 
   return (
     <div className="start-page">
-      <div className="panel chat-panel">
-        <div className="chat-messages">
-          {messages.map((msg, idx) => (
-            <div key={idx} className={`chat-bubble chat-bubble--${msg.role}`}>
-              {msg.text}
-            </div>
-          ))}
+      <div className="start-grid">
+        <div className="chat-container">
+          <div className="chat-header">
+            <h3>Ассистент миссии</h3>
+            <span className="status-dot online"></span>
+          </div>
+          
+          <div className="chat-messages">
+            {messages.map((msg, idx) => (
+              <div key={idx} className={`chat-bubble-wrapper ${msg.role === 'user' ? 'right' : 'left'}`}>
+                <div className={`chat-bubble chat-bubble--${msg.role}`}>
+                  {msg.text}
+                </div>
+              </div>
+            ))}
+          </div>
+          
+          <div className="chat-input-area">
+            <input 
+              type="text" 
+              className="chat-input" 
+              placeholder="Введите параметры объекта или команды..." 
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+            />
+            <button className="btn-icon" onClick={handleSendMessage}>
+              <Send size={18} />
+            </button>
+          </div>
         </div>
-        
-        <div className="chat-input-wrapper">
-          <input 
-            type="text" 
-            className="chat-input" 
-            placeholder="Input" 
-            value={chatInput}
-            onChange={(e) => setChatInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-          />
-          <button className="chat-send-btn" onClick={handleSendMessage}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 19V5M5 12l7-7 7 7"/>
-            </svg>
-          </button>
-        </div>
-      </div>
 
-      <div className="panel map-panel">
-        <div className="map-placeholder">
-          <h3>Маршрут пролета</h3>
-          <p className="map-info">Ожидание генерации маршрута нейросетью...</p>
-        </div>
-        <div className="map-actions">
-          <button 
-            className="btn-primary w-full" 
-            onClick={onStartFlight}
-            disabled={!!loadingMessage}
-          >
-            {loadingMessage || 'Подтвердить маршрут и начать полет'}
-          </button>
-          {infoMessage && <p className="status-msg info">{infoMessage}</p>}
-          {error && <p className="status-msg error">{error}</p>}
+        <div className="map-container">
+          <div className="map-view">
+            {!hasRoute ? (
+              <div className="map-empty">
+                <Map size={48} className="map-icon-placeholder" />
+                <p>Ожидание генерации маршрута...</p>
+              </div>
+            ) : (
+              <div className="map-generated">
+                <div className="map-overlay-grid"></div>
+                <div className="route-path"></div>
+                <Crosshair size={32} className="drone-cursor" />
+              </div>
+            )}
+          </div>
+          
+          <div className="map-controls">
+            <div className="mission-info">
+              <h4>Текущая миссия</h4>
+              <p>{hasRoute ? 'Маршрут готов к выполнению. Расчетное время: 14 мин.' : 'Параметры не заданы'}</p>
+            </div>
+            <button 
+              className="btn-primary start-flight-btn" 
+              onClick={onStartFlight}
+              disabled={!!loadingMessage || !hasRoute}
+            >
+              <Play size={16} />
+              {loadingMessage || 'Запустить БПЛА'}
+            </button>
+            {infoMessage && <p className="status-msg info">{infoMessage}</p>}
+            {error && <p className="status-msg error">{error}</p>}
+          </div>
         </div>
       </div>
     </div>
