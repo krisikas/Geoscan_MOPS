@@ -3,6 +3,8 @@ import './MainPage.css';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Navigation, Scan, Layers } from 'lucide-react';
 import logoMops from '../../assets/MOPS.svg';
+import photo1 from '../../assets/example_photo1.png';
+import photo2 from '../../assets/example_photo2.jpg';
 
 export default function MainPage() {
   return (
@@ -62,9 +64,11 @@ export default function MainPage() {
           <div className="feed-item">
             <div className="feed-content">
               <h3>1. Построение маршрута</h3>
-              <p>Укажите объект и границы. Система сгенерирует оптимальный маршрут для полного покрытия powierzchni с требуемым перекрытием кадров.</p>
+              <p>Укажите объект и границы. Система сгенерирует оптимальный маршрут для полного покрытия поверхности с требуемым перекрытием кадров.</p>
             </div>
-            <div className="feed-visual feed-visual-1"></div>
+            <div className="feed-visual feed-visual-1">
+              <img src={photo1} alt="Построение маршрута" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            </div>
           </div>
           
           <div className="feed-item reverse">
@@ -72,7 +76,9 @@ export default function MainPage() {
               <h3>2. Обработка данных</h3>
               <p>После выгрузки фотографий сервер автоматически запустит процесс сборки 3D-модели и поиск дефектов.</p>
             </div>
-            <div className="feed-visual feed-visual-2"></div>
+            <div className="feed-visual feed-visual-2">
+              <img src={photo2} alt="Обработка данных" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            </div>
           </div>
         </div>
       </section>
