@@ -21,9 +21,9 @@ def process_metashape(
     """
     try:
         import Metashape
-    except ImportError:
+    except ImportError as e:
         raise ImportError(
-            "Модуль Metashape не установлен. "
+            f"Модуль Metashape не установлен или отсутствуют зависимости: {e}\n"
             "Установите Agisoft Metashape и его Python API."
         )
 
