@@ -1,0 +1,55 @@
+
+services:
+  db:
+    image: postgres:15
+    container_name: mops_postgres
+    environment:
+      POSTGRES_USER: mops_user
+      POSTGRES_PASSWORD: mops_password
+      POSTGRES_DB: mops_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  backend:
+    build: 
+      context: ./backend
+    container_name: mops_backend
+    # Фиксируем MAC-адрес! Это критически важно для node-locked лицензии Metashape в Докере.
+    # Если MAC-адрес поменяется при перезапуске, лицензия слетит.
+    mac_address: 02:42:ac:11:00:02
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      # Папка для сохранения файла лицензии (чтобы он не пропадал при удалении контейнера)
+      - backend_license:/var/opt/agisoft/metashape/pro
+    environment:
+      - DATABASE_URL=postgresql://mops_user:mops_password@db:5432/mops_db
+      - YOLO_MODEL_PATH=/app/best.pt
+      # Если у вас есть плавающая лицензия на сервере, можно раскомментировать строку ниже:
+      # - agisoft_LICENSE=5053@license_server_ip
+    depends_on:
+      - db
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: mops_frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  backend_license:
