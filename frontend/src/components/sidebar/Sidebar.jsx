@@ -38,7 +38,7 @@ export default function Sidebar() {
                 <line x1="12" y1="22.08" x2="12" y2="12"/>
               </svg>
             </span>
-            <span className="nav-label">Полет (ИИ)</span>
+            <span className="nav-label">Планирование</span>
           </NavLink>
           
           <NavLink 
@@ -52,7 +52,7 @@ export default function Sidebar() {
                 <polyline points="21 15 16 10 5 21"/>
               </svg>
             </span>
-            <span className="nav-label">Обследование</span>
+            <span className="nav-label">Результат</span>
           </NavLink>
         </nav>
       </div>
@@ -66,7 +66,7 @@ export default function Sidebar() {
         {user && (
           <button className="logout-btn theme-toggle" onClick={handleLogout} style={{ marginTop: '8px', color: 'var(--color-error)' }}>
             <LogOut size={18} />
-            <span>Выйти ({user.name})</span>
+            <span>Выйти</span>
           </button>
         )}
       </div>
