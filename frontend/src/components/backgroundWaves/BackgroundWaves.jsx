@@ -20,16 +20,43 @@ export default function BackgroundWaves() {
       moveSpeed: 0.3, // Very slow and graceful
     };
 
+    let mouse = { x: null, y: null, radius: 250 };
+    
+    const handleMouseMove = (e) => {
+      mouse.x = e.clientX;
+      mouse.y = e.clientY;
+    };
+    window.addEventListener('mousemove', handleMouseMove);
+
     class Particle {
       constructor() {
         this.x = Math.random() * w;
         this.y = Math.random() * h;
         this.vx = (Math.random() - 0.5) * properties.moveSpeed;
         this.vy = (Math.random() - 0.5) * properties.moveSpeed;
+        this.baseVx = this.vx;
+        this.baseVy = this.vy;
       }
       update() {
         if (this.x < 0 || this.x > w) this.vx *= -1;
         if (this.y < 0 || this.y > h) this.vy *= -1;
+        
+        // Взаимодействие с курсором
+        if (mouse.x != null && mouse.y != null) {
+          let dx = mouse.x - this.x;
+          let dy = mouse.y - this.y;
+          let dist = Math.sqrt(dx * dx + dy * dy);
+          
+          if (dist < mouse.radius) {
+            let force = (mouse.radius - dist) / mouse.radius;
+            // Очень мягкое притяжение
+            let forceX = (dx / dist) * force * 0.8;
+            let forceY = (dy / dist) * force * 0.8;
+            this.x += forceX; // Притяжение (заставляет полигоны собираться вокруг курсора)
+            this.y += forceY;
+          }
+        }
+
         this.x += this.vx;
         this.y += this.vy;
       }
@@ -104,6 +131,7 @@ export default function BackgroundWaves() {
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      window.removeEventListener('mousemove', handleMouseMove);
       cancelAnimationFrame(animationFrameId);
     };
   }, []);
