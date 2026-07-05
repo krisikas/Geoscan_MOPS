@@ -39,12 +39,13 @@
   color: var(--color-text-secondary);
   font-weight: 500;
   font-size: 15px;
-  transition: all var(--transition-fast);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .nav-item:hover {
   color: var(--color-text-primary);
   background: rgba(255, 255, 255, 0.03);
+  transform: translateX(4px);
 }
 
 .nav-item--active {
@@ -114,13 +115,15 @@
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .theme-toggle:hover {
   background: rgba(255, 255, 255, 0.05);
   color: var(--color-text-primary);
   border-color: var(--color-border-hover);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
 }
 
 @keyframes pulse {

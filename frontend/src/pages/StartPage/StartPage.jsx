@@ -27,7 +27,7 @@ export default function StartPage({ onStartFlight, loadingMessage, infoMessage, 
   };
 
   return (
-    <div className="start-page">
+    <div className="start-page page-transition">
       <div className="start-grid">
         <div className="chat-container">
           <div className="chat-header">

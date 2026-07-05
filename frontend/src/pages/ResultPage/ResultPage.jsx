@@ -23,7 +23,7 @@ export default function ResultPage({
   const galleryItems = imageUrl ? [imageUrl, imageUrl, imageUrl, imageUrl, imageUrl] : [];
 
   return (
-    <div className="result-page">
+    <div className="result-page page-transition">
       <div className="projects-sidebar">
         <h2 className="sidebar-title">Проекты сканирования</h2>
         <div className="projects-list">

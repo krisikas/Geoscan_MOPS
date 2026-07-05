@@ -32,34 +32,6 @@ function AppContent() {
   const location = useLocation();
   const isAuthPage = location.pathname === '/auth' || location.pathname === '/';
 
-  // Управление темой
-  const getInitialTheme = () => {
-    const savedTheme = localStorage.getItem('theme')
-    if (savedTheme === 'dark' || savedTheme === 'light') {
-      return savedTheme
-    }
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-  }
-
-  const [theme, setTheme] = useState(getInitialTheme)
-
-  useEffect(() => {
-    const root = document.documentElement
-    const body = document.body
-    if (theme === 'dark') {
-      root.classList.add('dark-theme')
-      body.classList.add('dark-theme')
-    } else {
-      root.classList.remove('dark-theme')
-      body.classList.remove('dark-theme')
-    }
-    localStorage.setItem('theme', theme)
-  }, [theme])
-
-  const toggleTheme = useCallback(() => {
-    setTheme(prev => prev === 'light' ? 'dark' : 'light')
-  }, [])
-
   useEffect(() => {
     return () => {
       if (imageUrl) {
@@ -148,10 +120,10 @@ function AppContent() {
   }, [])
 
   return (
-    <div className={`app ${theme === 'dark' ? 'dark-theme' : ''}`}>
+    <div className="app">
       <BackgroundWaves />
       {/* Hide Sidebar on auth and main landing page for a cleaner look */}
-      {!isAuthPage && <Sidebar theme={theme} onToggleTheme={toggleTheme} />}
+      {!isAuthPage && <Sidebar />}
       
       <main className="app-content">
         {loadingMessage && (

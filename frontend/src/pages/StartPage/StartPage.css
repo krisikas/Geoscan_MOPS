@@ -71,6 +71,12 @@
   padding: 14px 18px;
   font-size: 14px;
   line-height: 1.5;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease;
+}
+
+.chat-bubble:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
 }
 
 .chat-bubble--ai {
@@ -107,15 +113,22 @@
   color: var(--color-text-primary);
   font-size: 14px;
   outline: none;
-  transition: var(--transition-fast);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .light-theme .chat-input {
   background: #ffffff;
 }
 
+.chat-input:hover {
+  background: rgba(0,0,0,0.3);
+  border-color: var(--color-border-hover);
+}
+
 .chat-input:focus {
   border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px rgba(224, 38, 0, 0.2);
+  background: rgba(0,0,0,0.4);
 }
 
 .btn-icon {
@@ -129,11 +142,18 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: var(--transition-fast);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 8px rgba(224, 38, 0, 0.2);
 }
 
 .btn-icon:hover {
   background: var(--color-accent-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(224, 38, 0, 0.4);
+}
+
+.btn-icon:active {
+  transform: translateY(0);
 }
 
 /* Map Container */

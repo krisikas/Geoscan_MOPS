@@ -24,7 +24,7 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="auth-container">
+    <div className="auth-container page-transition">
       <Link to="/" className="auth-back-link">
         <ArrowLeft size={16} /> На главную
       </Link>
