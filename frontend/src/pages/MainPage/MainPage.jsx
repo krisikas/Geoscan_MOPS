@@ -10,8 +10,7 @@ export default function MainPage() {
       <nav className="landing-nav">
         <div className="landing-logo">GEOSCAN <span>MOPS</span></div>
         <div className="landing-nav-actions">
-          <Link to="/auth" className="btn-secondary">Войти</Link>
-          <Link to="/auth" className="btn-primary">Начать работу <ArrowRight size={16} /></Link>
+          <Link to="/auth" className="btn-primary">Войти</Link>
         </div>
       </nav>
 
