@@ -92,7 +92,7 @@ body {
   font-size: 14px;
   text-decoration: none;
   cursor: pointer;
-  transition: var(--transition-fast);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   border: none;
 }
 
@@ -104,8 +104,12 @@ body {
 
 .btn-primary:hover:not(:disabled) {
   background: var(--color-accent-hover);
-  box-shadow: 0 4px 15px rgba(224, 38, 0, 0.4);
-  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(224, 38, 0, 0.5);
+  transform: translateY(-2px);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 .btn-primary:disabled {
@@ -122,6 +126,29 @@ body {
 .btn-secondary:hover {
   background: var(--color-panel-hover);
   border-color: var(--color-border-hover);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-secondary:active {
+  transform: translateY(0);
+}
+
+/* Page Transitions */
+@keyframes pageEnter {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.page-transition {
+  animation: pageEnter 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity;
 }
 
 /* Loaders and Status */

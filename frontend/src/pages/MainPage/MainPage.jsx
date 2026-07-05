@@ -2,13 +2,17 @@ import React from 'react';
 import './MainPage.css';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Navigation, Scan, Layers } from 'lucide-react';
+import logoMops from '../../assets/MOPS.svg';
 
 export default function MainPage() {
   return (
-    <div className="main-landing">
+    <div className="main-landing page-transition">
       {/* Navbar for Landing */}
       <nav className="landing-nav">
-        <div className="landing-logo">GEOSCAN <span>MOPS</span></div>
+        <div className="landing-logo">
+          <img src={logoMops} alt="MOPS Logo" className="logo-icon" />
+          GEOSCAN <span>MOPS</span>
+        </div>
         <div className="landing-nav-actions">
           <Link to="/auth" className="btn-primary">Войти</Link>
         </div>

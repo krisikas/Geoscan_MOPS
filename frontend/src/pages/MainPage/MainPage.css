@@ -17,9 +17,17 @@
 }
 
 .landing-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   font-size: 20px;
   font-weight: 700;
   letter-spacing: -0.02em;
+}
+
+.logo-icon {
+  height: 32px;
+  width: auto;
 }
 
 .landing-logo span {
@@ -29,6 +37,28 @@
 .landing-nav-actions {
   display: flex;
   gap: 16px;
+  align-items: center;
+}
+
+.theme-toggle-main {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.theme-toggle-main:hover {
+  background: var(--color-panel-hover);
+  border-color: var(--color-border-hover);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
 }
 
 .landing-hero {
@@ -136,7 +166,7 @@
 }
 
 .feature-card:hover .feature-icon-wrapper {
-  transform: scale(1.1) rotate(5deg);
+  transform: scale(1.1);
   border-color: var(--color-accent);
   color: var(--color-accent);
 }

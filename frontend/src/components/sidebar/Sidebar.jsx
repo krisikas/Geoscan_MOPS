@@ -3,8 +3,9 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import './Sidebar.css';
 import { LogOut } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import logoMops from '../../assets/MOPS.svg';
 
-export default function Sidebar({ theme, onToggleTheme }) {
+export default function Sidebar() {
   const { logout, user } = useAuth();
   const navigate = useNavigate();
 
@@ -17,9 +18,11 @@ export default function Sidebar({ theme, onToggleTheme }) {
     <aside className="app-sidebar">
       <div className="sidebar-top">
         <div className="brand">
-          {/* Fallback text if image doesn't load */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '18px', fontWeight: 'bold' }}>MOPS</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <img src={logoMops} alt="MOPS Logo" style={{ height: '24px', width: 'auto' }} />
+            <span className="landing-logo" style={{ fontSize: '18px', fontWeight: 'bold' }}>
+              GEOSCAN <span style={{ color: 'var(--color-accent)' }}>MOPS</span>
+            </span>
           </div>
         </div>
         
@@ -59,36 +62,6 @@ export default function Sidebar({ theme, onToggleTheme }) {
           <span className="status-dot"></span>
           <span className="status-text">БПЛА Подключен</span>
         </div>
-
-        <button 
-          className="theme-toggle"
-          onClick={onToggleTheme}
-          aria-label="Сменить тему"
-        >
-          {theme === 'dark' ? (
-            <>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="5"/>
-                <line x1="12" y1="1" x2="12" y2="3"/>
-                <line x1="12" y1="21" x2="12" y2="23"/>
-                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
-                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
-                <line x1="1" y1="12" x2="3" y2="12"/>
-                <line x1="21" y1="12" x2="23" y2="12"/>
-                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
-                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
-              </svg>
-              <span>Светлая тема</span>
-            </>
-          ) : (
-            <>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-              </svg>
-              <span>Темная тема</span>
-            </>
-          )}
-        </button>
 
         {user && (
           <button className="logout-btn theme-toggle" onClick={handleLogout} style={{ marginTop: '8px', color: 'var(--color-error)' }}>

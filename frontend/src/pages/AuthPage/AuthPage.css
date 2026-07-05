@@ -35,6 +35,12 @@
   max-width: 440px;
   backdrop-filter: blur(20px);
   box-shadow: var(--shadow-md);
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.auth-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
 }
 
 .auth-title {
@@ -78,13 +84,19 @@
   border-radius: var(--radius-md);
   color: var(--color-text-primary);
   font-size: 15px;
-  transition: var(--transition-fast);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   outline: none;
+}
+
+.form-group input:hover {
+  background: rgba(0, 0, 0, 0.3);
+  border-color: var(--color-border-hover);
 }
 
 .form-group input:focus {
   border-color: var(--color-accent);
   box-shadow: 0 0 0 2px rgba(224, 38, 0, 0.2);
+  background: rgba(0, 0, 0, 0.4);
 }
 
 .light-theme .form-group input {
