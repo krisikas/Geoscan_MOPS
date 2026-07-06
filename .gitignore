@@ -11,6 +11,7 @@ best.pt
 .idea/
 .vscode/
 *.swp
+.DS_Store
 
 docker-compose.override.yml
 
