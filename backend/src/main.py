@@ -7,9 +7,9 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from fly import fly_start, DroneConnectionError
-from grabber import grab_images
-from ai import process_image, process_ai_image
+from src.services.fly import fly_start, DroneConnectionError
+from src.services.grabber import grab_images
+from src.services.ai import process_image, process_ai_image
 
 TMP_ROOT = "tmp"
 
@@ -165,7 +165,7 @@ def process_metashape(session_id: int) -> str:
     Использует фотографии из data/ и сохраняет ортомозаику в metashape/.
     Возвращает путь к созданной ортомозаике.
     """
-    from metashape import process_metashape as run_metashape
+    from src.services.metashape import process_metashape as run_metashape
 
     paths = _get_paths(session_id)
     data_dir = paths["data"]
