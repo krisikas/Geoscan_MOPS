@@ -8,13 +8,12 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('mops_token');
     const storedUser = localStorage.getItem('mops_user');
     
-    if (token && storedUser) {
+    if (storedUser) {
       setUser(JSON.parse(storedUser));
       fetch(`${API_URL}/api/auth/me`, {
-        headers: { Authorization: `Bearer ${token}` }
+        credentials: 'include'
       })
       .then(res => {
         if (!res.ok) throw new Error('Token invalid');
@@ -35,38 +34,40 @@ export const AuthProvider = ({ children }) => {
     const response = await fetch(`${API_URL}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
+      body: JSON.stringify({ email, password }),
+      credentials: 'include'
     });
     const data = await response.json();
     if (!response.ok) {
       throw new Error(data.detail || 'Ошибка входа');
     }
-    setUser(data.user);
-    localStorage.setItem('mops_user', JSON.stringify(data.user));
-    localStorage.setItem('mops_token', data.access_token);
-    return data.user;
+    setUser(data);
+    localStorage.setItem('mops_user', JSON.stringify(data));
+    return data;
   };
 
   const register = async (name, email, password) => {
     const response = await fetch(`${API_URL}/api/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, password })
+      body: JSON.stringify({ name, email, password }),
+      credentials: 'include'
     });
     const data = await response.json();
     if (!response.ok) {
       throw new Error(data.detail || 'Ошибка регистрации');
     }
-    setUser(data.user);
-    localStorage.setItem('mops_user', JSON.stringify(data.user));
-    localStorage.setItem('mops_token', data.access_token);
-    return data.user;
+    setUser(data);
+    localStorage.setItem('mops_user', JSON.stringify(data));
+    return data;
   };
 
-  const logout = () => {
+  const logout = async () => {
     setUser(null);
     localStorage.removeItem('mops_user');
-    localStorage.removeItem('mops_token');
+    try {
+      await fetch(`${API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include' });
+    } catch(e) {}
   };
 
   return (

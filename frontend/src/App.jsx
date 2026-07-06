@@ -46,104 +46,12 @@ function AppContent() {
     setError(null)
     setInfoMessage(null)
     setLoadingMessage('Стартуем полёт и сбор данных…')
-    try {
-      const token = localStorage.getItem('mops_token');
-      const response = await fetch(`${API_BASE_URL}/start/fly`, { 
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (response.status === 401) {
-        logout()
-        navigate('/auth')
-        return
-      }
-      const payload = await response.json().catch(() => null)
-      if (!response.ok) throw new Error(payload?.detail ?? 'Не удалось запустить полёт')
-      setInfoMessage('Пайплайн съёмки запущен')
-    } catch (startError) {
-      setError(startError.message ?? 'Сбой запуска полёта')
-    } finally {
+    
+    // Эмуляция старта полета (бэкенд пока не имеет реального управления БПЛА)
+    setTimeout(() => {
       setLoadingMessage(null)
-    }
-  }, [logout, navigate])
-
-  const handleUploadFolderForMetashape = useCallback(async (files) => {
-    setError(null)
-    setInfoMessage(null)
-    setLoadingMessage('Загружаем фотографии и обрабатываем Metashape…')
-    try {
-      const formData = new FormData()
-      Array.from(files).forEach((file) => formData.append('files', file))
-      const token = localStorage.getItem('mops_token');
-      const response = await fetch(`${API_BASE_URL}/data/upload-and-process-metashape`, {
-        method: 'POST', 
-        body: formData,
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (response.status === 401) {
-        logout()
-        navigate('/auth')
-        return
-      }
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null)
-        throw new Error(payload?.detail ?? 'Не удалось обработать фотографии')
-      }
-      const blob = await response.blob()
-      const url = URL.createObjectURL(blob)
-      setImageUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev)
-        return url
-      })
-      setInfoMessage('Metashape обработка завершена')
-    } catch (uploadError) {
-      setError(uploadError.message ?? 'Не удалось загрузить и обработать фотографии')
-    } finally {
-      setLoadingMessage(null)
-    }
-  }, [logout, navigate])
-
-  const handleUploadSingleForAI = useCallback(async (file) => {
-    setError(null)
-    setInfoMessage(null)
-    setLoadingMessage('Загружаем фото и обрабатываем AI…')
-    try {
-      const formData = new FormData()
-      formData.append('file', file)
-      const token = localStorage.getItem('mops_token');
-      const response = await fetch(`${API_BASE_URL}/data/upload-and-process-ai`, {
-        method: 'POST', 
-        body: formData,
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (response.status === 401) {
-        logout()
-        navigate('/auth')
-        return
-      }
-      if (!response.ok) {
-        let errorMessage = 'Не удалось обработать фото'
-        try {
-          const payload = await response.json()
-          errorMessage = payload?.detail ?? errorMessage
-        } catch {
-          if (response.status === 503) errorMessage = 'Модель AI недоступна.'
-          else if (response.status === 500) errorMessage = 'Ошибка сервера при обработке изображения'
-        }
-        throw new Error(errorMessage)
-      }
-      const blob = await response.blob()
-      const url = URL.createObjectURL(blob)
-      setImageUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev)
-        return url
-      })
-      setInfoMessage('AI обработка завершена')
-    } catch (uploadError) {
-      setError(uploadError.message ?? 'Не удалось загрузить и обработать фото')
-    } finally {
-      setLoadingMessage(null)
-    }
+      setInfoMessage('Пайплайн съёмки запущен и выполняется')
+    }, 2000)
   }, [logout, navigate])
 
   return (

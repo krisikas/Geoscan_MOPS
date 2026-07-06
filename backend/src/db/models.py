@@ -21,5 +21,8 @@ class Project(Base):
     name = Column(String, index=True, nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    ai_status = Column(String, default="idle")
+    metashape_status = Column(String, default="idle")
+    error_message = Column(String, nullable=True)
 
     owner = relationship("User", back_populates="projects")
