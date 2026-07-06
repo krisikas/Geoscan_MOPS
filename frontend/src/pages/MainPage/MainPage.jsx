@@ -3,7 +3,7 @@ import './MainPage.css';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Navigation, Scan, Layers } from 'lucide-react';
 import logoMops from '../../assets/MOPS.svg';
-import photo1 from '../../assets/example_photo1.png';
+import photo1 from '../../assets/example_photo1.jpg';
 import photo2 from '../../assets/example_photo2.jpg';
 
 export default function MainPage() {

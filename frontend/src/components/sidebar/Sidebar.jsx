@@ -64,10 +64,14 @@ export default function Sidebar() {
         </div>
 
         {user && (
-          <button className="logout-btn theme-toggle" onClick={handleLogout} style={{ marginTop: '8px', color: 'var(--color-error)' }}>
-            <LogOut size={18} />
-            <span>Выйти</span>
-          </button>
+          <div className="sidebar-user-info" style={{ marginTop: '15px', padding: '10px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div style={{ fontWeight: '600' }}>{user.name}</div>
+            <div style={{ opacity: 0.6, fontSize: '11px', marginBottom: '8px', wordBreak: 'break-all' }}>{user.email}</div>
+            <button className="logout-btn" onClick={handleLogout} style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#ff4d4f', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+              <LogOut size={16} />
+              <span>Выйти</span>
+            </button>
+          </div>
         )}
       </div>
     </aside>
