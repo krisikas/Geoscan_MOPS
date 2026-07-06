@@ -22,7 +22,6 @@ services:
       - ./frontend:/app
       - /app/node_modules
     environment:
-      # Браузер (работающий на хосте) будет стучаться к бекенду (работающему на хосте)
       - VITE_API_BASE_URL=http://localhost:8000
     restart: unless-stopped
 
