@@ -12,14 +12,19 @@ RUN apt-get update && apt-get install -y \
     libxrender-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install -r requirements.txt
     
-# Копируем .whl файл Metashape и устанавливаем его (используем *, чтобы поймать любое имя)
-COPY metashape*.whl .
-RUN pip install ./metashape*.whl
+RUN curl -sSL https://install.python-poetry.org | python3 -
+ENV PATH="/root/.local/bin:$PATH"
 
-COPY . .
+COPY pyproject.toml poetry.lock* ./
+RUN poetry config virtualenvs.create false && poetry install --no-interaction --no-ansi --no-root
 
-CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+COPY metashape*.whl /tmp/
+
+RUN mv /tmp/metashape*.whl /tmp/metashape-2.3.1-cp310-abi3-linux_x86_64.whl && \
+    pip install /tmp/metashape-2.3.1-cp310-abi3-linux_x86_64.whl && \
+    rm /tmp/metashape-2.3.1-cp310-abi3-linux_x86_64.whl
+
+COPY src ./src
+
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
