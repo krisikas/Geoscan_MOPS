@@ -13,7 +13,7 @@ export default function ResultPage() {
   
   const [projects, setProjects] = useState([]);
   const [activeProject, setActiveProject] = useState(null);
-  const [images, setImages] = useState({ ai_input: [], ai_output: [], metashape_input: [], metashape_output: [] });
+  const [images, setImages] = useState({ projectId: null, ai_input: [], ai_output: [], metashape_input: [], metashape_output: [] });
   const [activeGroup, setActiveGroup] = useState('ai'); // 'ai' | 'metashape'
   const [showAIOutput, setShowAIOutput] = useState(false);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
@@ -29,10 +29,9 @@ export default function ResultPage() {
   };
 
   const authFetch = async (url, options = {}) => {
-    const token = localStorage.getItem('mops_token');
     const res = await fetch(url, {
       ...options,
-      headers: { ...options.headers, 'Authorization': `Bearer ${token}` }
+      credentials: 'include'
     });
     if (res.status === 401) { logout(); navigate('/auth'); throw new Error('Unauthorized'); }
     if (!res.ok) {
@@ -59,13 +58,13 @@ export default function ResultPage() {
     try {
       const res = await authFetch(`${API_BASE_URL}/api/projects/${projectId}/images`);
       const data = await res.json();
-      setImages(data);
+      setImages({ projectId, ...data });
     } catch (e) { console.error(e); }
   };
 
   useEffect(() => {
     if (activeProject?.id) { 
-      setImages({ ai_input: [], ai_output: [], metashape_input: [], metashape_output: [] });
+      setImages({ projectId: null, ai_input: [], ai_output: [], metashape_input: [], metashape_output: [] });
       setObjectUrls({});
       setProjectStatus({ ai: 'idle', metashape: 'idle', error: null });
       fetchImages(activeProject.id); 
@@ -75,14 +74,17 @@ export default function ResultPage() {
   useEffect(() => {
     if (!activeProject?.id) return;
     let lastStatus = { ai: 'idle', metashape: 'idle' };
-    const interval = setInterval(async () => {
+    
+    const eventSource = new EventSource(`${API_BASE_URL}/api/projects/${activeProject.id}/status/stream`, { withCredentials: true });
+    
+    eventSource.onmessage = (event) => {
         try {
-            const res = await authFetch(`${API_BASE_URL}/api/projects/${activeProject.id}/status`);
-            const data = await res.json();
+            const data = JSON.parse(event.data);
             setProjectStatus(data);
             
-            if (data.error && data.error !== lastStatus.error) {
-                showError("Ошибка обработки: " + data.error);
+            if ((data.ai === 'error' && lastStatus.ai === 'processing') || 
+                (data.metashape === 'error' && lastStatus.metashape === 'processing')) {
+                if (data.error) showError("Ошибка обработки: " + data.error);
             }
             if ((data.ai === 'done' && lastStatus.ai === 'processing') || 
                 (data.metashape === 'done' && lastStatus.metashape === 'processing')) {
@@ -90,8 +92,9 @@ export default function ResultPage() {
             }
             lastStatus = data;
         } catch(e) {}
-    }, 2000);
-    return () => clearInterval(interval);
+    };
+
+    return () => eventSource.close();
   }, [activeProject?.id]);
 
   const handleCreateProject = async () => {
@@ -147,36 +150,47 @@ export default function ResultPage() {
   };
 
   const getImageUrl = (group, filename) => {
-    const token = localStorage.getItem('mops_token');
-    // Using simple approach by passing token via query param or fetching as blob
-    // For simplicity in UI since img tag can't send headers easily: 
-    // We will just fetch the blob and create Object URL
+    // With HttpOnly cookies, we can just use the URL directly in <img src>
   };
 
   const [objectUrls, setObjectUrls] = useState({});
 
   useEffect(() => {
-    // Generate object URLs for images efficiently
-    const loadImages = async () => {
-        const urls = { ...objectUrls };
-        let changed = false;
-        for (const group of ['ai_input', 'ai_output', 'metashape_input', 'metashape_output']) {
-            for (const img of images[group] || []) {
-                const key = `${group}_${img}`;
-                if (!urls[key]) {
-                    try {
-                        const res = await authFetch(`${API_BASE_URL}/api/projects/${activeProject.id}/images/${group}/${img}`);
-                        const blob = await res.blob();
-                        urls[key] = URL.createObjectURL(blob);
-                        changed = true;
-                    } catch(e) {}
-                }
+    if (!activeProject?.id || images.projectId !== activeProject.id) return;
+    const currentProjectId = activeProject.id;
+    
+    const missingKeys = [];
+    for (const group of ['ai_input', 'ai_output', 'metashape_input', 'metashape_output']) {
+        for (const img of images[group] || []) {
+            const key = `${currentProjectId}_${group}_${img}`;
+            if (!objectUrls[key]) {
+                missingKeys.push({ group, img, key });
             }
         }
-        if (changed) setObjectUrls(urls);
+    }
+    
+    if (missingKeys.length === 0) return;
+
+    const fetchMissing = async () => {
+        const newUrls = {};
+        let changed = false;
+        for (const { group, img, key } of missingKeys) {
+            try {
+                const res = await authFetch(`${API_BASE_URL}/api/projects/${currentProjectId}/images/${group}/${img}`);
+                if (res.ok) {
+                    const blob = await res.blob();
+                    newUrls[key] = URL.createObjectURL(blob);
+                    changed = true;
+                }
+            } catch(e) {}
+        }
+        if (changed) {
+            setObjectUrls(prev => ({ ...prev, ...newUrls }));
+        }
     };
-    if (activeProject?.id) loadImages();
-  }, [images, activeProject?.id]);
+    
+    fetchMissing();
+  }, [images, activeProject?.id, objectUrls]);
 
   const currentGroupImages = activeGroup === 'ai' 
     ? (showAIOutput ? images.ai_output : images.ai_input)
@@ -190,8 +204,8 @@ export default function ResultPage() {
   return (
     <div className="result-page page-transition">
       {errorMsg && (
-        <div style={{ position:'fixed', top:'20px', left:'50%', transform:'translateX(-50%)', background:'#ef4444', color:'#fff', padding:'12px 24px', borderRadius:'8px', zIndex:10000, boxShadow:'0 4px 12px rgba(239,68,68,0.3)', fontWeight:'500' }}>
-            {errorMsg}
+        <div className="app-status-panel">
+            <span className="app-status app-status--error">{errorMsg}</span>
         </div>
       )}
       <div className="projects-sidebar">
@@ -282,7 +296,7 @@ export default function ResultPage() {
                     </div>
                 ) : currentGroupImages.length > 0 ? (
                     currentGroupImages.map((img, i) => {
-                        const url = objectUrls[`${folderKey}_${img}`];
+                        const url = objectUrls[`${activeProject.id}_${folderKey}_${img}`];
                         return (
                         <div key={i} className="gallery-thumbnail" onClick={() => setFullscreenImage(url)}>
                             {url ? <img src={url} alt={`Снимок ${i+1}`} loading="lazy" /> : <div className="loading-placeholder">Загрузка...</div>}

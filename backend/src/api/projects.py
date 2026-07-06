@@ -2,11 +2,13 @@ import os
 import glob
 import shutil
 import json
+import uuid
+import asyncio
 from typing import List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
-from src.db.database import get_db
+from src.db.database import get_db, SessionLocal
 from src.db.models import User, Project
 from src.api.auth import get_current_user
 from src.schemas.project import ProjectCreate, ProjectResponse
@@ -16,21 +18,16 @@ router = APIRouter()
 
 PROJECTS_ROOT = "data/projects"
 
-def get_status(project_id: int):
-    status_file = os.path.join(PROJECTS_ROOT, str(project_id), "status.json")
-    if os.path.exists(status_file):
-        with open(status_file, "r") as f:
-            return json.load(f)
-    return {"ai": "idle", "metashape": "idle", "error": None}
-
-def set_status(project_id: int, status_update: dict):
-    base = os.path.join(PROJECTS_ROOT, str(project_id))
-    os.makedirs(base, exist_ok=True)
-    status = get_status(project_id)
-    status.update(status_update)
-    status_file = os.path.join(base, "status.json")
-    with open(status_file, "w") as f:
-        json.dump(status, f)
+def set_project_status(project_id: int, db: Session, update_data: dict):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if project:
+        if "ai_status" in update_data:
+            project.ai_status = update_data["ai_status"]
+        if "metashape_status" in update_data:
+            project.metashape_status = update_data["metashape_status"]
+        if "error_message" in update_data:
+            project.error_message = update_data["error_message"]
+        db.commit()
 
 def _ensure_project_dirs(project_id: int):
     base = os.path.join(PROJECTS_ROOT, str(project_id))
@@ -77,6 +74,13 @@ def delete_project(project_id: int, db: Session = Depends(get_db), current_user:
         shutil.rmtree(base)
     return {"detail": "Project deleted"}
 
+def is_valid_image(content: bytes) -> bool:
+    if content.startswith(b'\xff\xd8\xff'): return True # JPEG
+    if content.startswith(b'\x89PNG\r\n\x1a\n'): return True # PNG
+    if content.startswith(b'II*\x00') or content.startswith(b'MM\x00*'): return True # TIFF
+    if content.startswith(b'BM'): return True # BMP
+    return False
+
 @router.post("/{project_id}/upload/{group}")
 async def upload_photos(
     project_id: int,
@@ -99,9 +103,12 @@ async def upload_photos(
     for upload in files:
         if not upload.content_type.startswith("image/"):
             continue
-        safe_filename = os.path.basename(upload.filename)
-        dest_path = os.path.join(dest_dir, safe_filename)
         content = await upload.read()
+        if not is_valid_image(content):
+            continue
+        ext = os.path.splitext(upload.filename)[1].lower()
+        safe_filename = f"{uuid.uuid4().hex}{ext}"
+        dest_path = os.path.join(dest_dir, safe_filename)
         with open(dest_path, "wb") as f:
             f.write(content)
         saved.append(safe_filename)
@@ -142,18 +149,47 @@ def get_project_status(project_id: int, db: Session = Depends(get_db), current_u
     project = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    return get_status(project.id)
+    return {
+        "ai": project.ai_status,
+        "metashape": project.metashape_status,
+        "error": project.error_message
+    }
+
+@router.get("/{project_id}/status/stream")
+async def get_project_status_stream(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    project = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+        
+    async def event_generator():
+        last_state = None
+        while True:
+            db.refresh(project)
+            current_state = {
+                "ai": project.ai_status,
+                "metashape": project.metashape_status,
+                "error": project.error_message
+            }
+            if current_state != last_state:
+                yield f"data: {json.dumps(current_state)}\n\n"
+                last_state = current_state
+            await asyncio.sleep(1)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 def run_ai_task(project_id: int, input_dir: str, output_dir: str, images: List[str]):
+    db = SessionLocal()
     try:
         from src.services.ai import process_ai_image
         for img_name in images:
             in_path = os.path.join(input_dir, img_name)
             out_path = os.path.join(output_dir, img_name)
             process_ai_image(in_path, out_path)
-        set_status(project_id, {"ai": "done"})
+        set_project_status(project_id, db, {"ai_status": "done"})
     except Exception as e:
-        set_status(project_id, {"ai": "error", "error": f"Ошибка ИИ: {str(e)}"})
+        set_project_status(project_id, db, {"ai_status": "error", "error_message": f"Ошибка ИИ: {str(e)}"})
+    finally:
+        db.close()
 
 @router.post("/{project_id}/process/ai")
 def process_ai(project_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -174,11 +210,12 @@ def process_ai(project_id: int, background_tasks: BackgroundTasks, db: Session =
     except ImportError:
         raise HTTPException(status_code=503, detail="Ошибка: Модуль ИИ не найден или не установлен. Проверьте зависимости.")
 
-    set_status(project.id, {"ai": "processing", "error": None})
+    set_project_status(project.id, db, {"ai_status": "processing", "error_message": None})
     background_tasks.add_task(run_ai_task, project.id, input_dir, output_dir, images)
     return {"status": "started"}
 
 def run_metashape_task(project_id: int, input_dir: str, output_dir: str):
+    db = SessionLocal()
     try:
         from src.services.metashape import process_metashape as run_metashape
         ortho_out = os.path.join(output_dir, "orthomosaic.png")
@@ -192,9 +229,11 @@ def run_metashape_task(project_id: int, input_dir: str, output_dir: str):
         except Exception:
             shutil.copy2(res, ai_out)
             
-        set_status(project_id, {"metashape": "done"})
+        set_project_status(project_id, db, {"metashape_status": "done"})
     except Exception as e:
-        set_status(project_id, {"metashape": "error", "error": f"Ошибка Metashape: {str(e)}"})
+        set_project_status(project_id, db, {"metashape_status": "error", "error_message": f"Ошибка Metashape: {str(e)}"})
+    finally:
+        db.close()
 
 @router.post("/{project_id}/process/metashape")
 def process_metashape(project_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -215,6 +254,6 @@ def process_metashape(project_id: int, background_tasks: BackgroundTasks, db: Se
     except ImportError:
         raise HTTPException(status_code=503, detail="Ошибка: Библиотека Metashape не установлена в системе.")
         
-    set_status(project.id, {"metashape": "processing", "error": None})
+    set_project_status(project.id, db, {"metashape_status": "processing", "error_message": None})
     background_tasks.add_task(run_metashape_task, project.id, input_dir, output_dir)
     return {"status": "started"}
