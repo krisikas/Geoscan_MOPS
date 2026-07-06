@@ -185,12 +185,7 @@ function AppContent() {
             path="/result" 
             element={
               <ProtectedRoute>
-                <ResultPage 
-                  imageUrl={imageUrl} 
-                  onUploadFolderForMetashape={handleUploadFolderForMetashape} 
-                  onUploadSingleForAI={handleUploadSingleForAI}
-                  loadingMessage={loadingMessage}
-                />
+                <ResultPage />
               </ProtectedRoute>
             } 
           />

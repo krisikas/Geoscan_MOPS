@@ -64,11 +64,13 @@ export default function Sidebar() {
         </div>
 
         {user && (
-          <div className="sidebar-user-info" style={{ marginTop: '15px', padding: '10px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <div style={{ fontWeight: '600' }}>{user.name}</div>
-            <div style={{ opacity: 0.6, fontSize: '11px', marginBottom: '8px', wordBreak: 'break-all' }}>{user.email}</div>
-            <button className="logout-btn" onClick={handleLogout} style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#ff4d4f', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-              <LogOut size={16} />
+          <div className="sidebar-user-card">
+            <div className="sidebar-user-info">
+              <span className="user-name">{user.name}</span>
+              <span className="user-email">{user.email}</span>
+            </div>
+            <button className="sidebar-logout-btn" onClick={handleLogout}>
+              <LogOut size={18} />
               <span>Выйти</span>
             </button>
           </div>

@@ -15,9 +15,9 @@ export default function BackgroundWaves() {
 
     const particles = [];
     const properties = {
-      particleCount: Math.floor((w * h) / 15000), // Dynamic count based on screen size
-      linkRadius: 180,
-      moveSpeed: 0.3, // Very slow and graceful
+      particleCount: Math.min(250, Math.floor((w * h) / 10000)), // Original high density, capped at 250 for massive 4k screens
+      linkRadius: 180, // Restored original radius for large polygons
+      moveSpeed: 0.3, // Restored original graceful speed
     };
 
     let mouse = { x: null, y: null, radius: 250 };
@@ -69,17 +69,32 @@ export default function BackgroundWaves() {
     const draw = () => {
       ctx.clearRect(0, 0, w, h);
 
+      // Сначала обновляем все координаты
       for (let i = 0; i < particles.length; i++) {
         particles[i].update();
+      }
 
-        // Draw connections and triangles
+      // ОПТИМИЗАЦИЯ 1: Сортировка по оси X.
+      // Занимает доли миллисекунды (т.к. массив почти отсортирован с прошлого кадра),
+      // но позволяет мгновенно отсекать дальние частицы (O(N log N) вместо O(N^2))
+      particles.sort((a, b) => a.x - b.x);
+
+      for (let i = 0; i < particles.length; i++) {
+        // Отрисовка связей и треугольников
         for (let j = i + 1; j < particles.length; j++) {
-          let dx = particles[i].x - particles[j].x;
-          let dy = particles[i].y - particles[j].y;
+          let dx = particles[j].x - particles[i].x; // Всегда >= 0 благодаря сортировке
+          
+          // ОПТИМИЗАЦИЯ 2: Если по X расстояние больше радиуса, прерываем внутренний цикл.
+          // Все оставшиеся элементы j будут еще дальше!
+          if (dx > properties.linkRadius) break;
+
+          let dy = particles[j].y - particles[i].y;
+          if (Math.abs(dy) > properties.linkRadius) continue;
+
           let dist = Math.sqrt(dx * dx + dy * dy);
 
           if (dist < properties.linkRadius) {
-            // Draw lines (wireframe)
+            // Линии
             const lineAlpha = 0.15 - (dist / properties.linkRadius) * 0.15;
             ctx.beginPath();
             ctx.strokeStyle = `rgba(255, 255, 255, ${lineAlpha})`;
@@ -88,28 +103,34 @@ export default function BackgroundWaves() {
             ctx.lineTo(particles[j].x, particles[j].y);
             ctx.stroke();
 
-            // Find third point for triangle (polygonal face)
+            // Треугольники
             for (let k = j + 1; k < particles.length; k++) {
-              let dx2 = particles[j].x - particles[k].x;
-              let dy2 = particles[j].y - particles[k].y;
+              let dx3 = particles[k].x - particles[i].x;
+              // ОПТИМИЗАЦИЯ 3: Тот же трюк для третьего угла треугольника
+              if (dx3 > properties.linkRadius) break;
+
+              let dy3 = particles[k].y - particles[i].y;
+              if (Math.abs(dy3) > properties.linkRadius) continue;
+
+              let dx2 = particles[k].x - particles[j].x;
+              let dy2 = particles[k].y - particles[j].y;
+              if (Math.abs(dx2) > properties.linkRadius || Math.abs(dy2) > properties.linkRadius) continue;
+
               let dist2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+              if (dist2 < properties.linkRadius) {
+                let dist3 = Math.sqrt(dx3 * dx3 + dy3 * dy3);
 
-              let dx3 = particles[i].x - particles[k].x;
-              let dy3 = particles[i].y - particles[k].y;
-              let dist3 = Math.sqrt(dx3 * dx3 + dy3 * dy3);
-
-              if (dist2 < properties.linkRadius && dist3 < properties.linkRadius) {
-                // Determine opacity based on how close the three points are
-                let faceAlpha = 0.04 - (dist + dist2 + dist3) / (properties.linkRadius * 3) * 0.04;
-                if (faceAlpha > 0) {
-                  ctx.beginPath();
-                  // Using Geoscan Red for the polygonal fill
-                  ctx.fillStyle = `rgba(224, 38, 0, ${faceAlpha * 1.5})`;
-                  ctx.moveTo(particles[i].x, particles[i].y);
-                  ctx.lineTo(particles[j].x, particles[j].y);
-                  ctx.lineTo(particles[k].x, particles[k].y);
-                  ctx.closePath();
-                  ctx.fill();
+                if (dist3 < properties.linkRadius) {
+                  let faceAlpha = 0.04 - (dist + dist2 + dist3) / (properties.linkRadius * 3) * 0.04;
+                  if (faceAlpha > 0) {
+                    ctx.beginPath();
+                    ctx.fillStyle = `rgba(224, 38, 0, ${faceAlpha * 1.5})`;
+                    ctx.moveTo(particles[i].x, particles[i].y);
+                    ctx.lineTo(particles[j].x, particles[j].y);
+                    ctx.lineTo(particles[k].x, particles[k].y);
+                    ctx.closePath();
+                    ctx.fill();
+                  }
                 }
               }
             }
