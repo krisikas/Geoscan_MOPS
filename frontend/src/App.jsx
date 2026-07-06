@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import './App.css'
 import Sidebar from './components/sidebar/Sidebar'
 import Loader from './components/loader/Loader'
@@ -24,6 +24,8 @@ const ProtectedRoute = ({ children }) => {
 };
 
 function AppContent() {
+  const { logout } = useAuth()
+  const navigate = useNavigate()
   const [imageUrl, setImageUrl] = useState(null)
   const [loadingMessage, setLoadingMessage] = useState(null)
   const [infoMessage, setInfoMessage] = useState(null)
@@ -45,7 +47,16 @@ function AppContent() {
     setInfoMessage(null)
     setLoadingMessage('Стартуем полёт и сбор данных…')
     try {
-      const response = await fetch(`${API_BASE_URL}/start/fly`, { method: 'POST' })
+      const token = localStorage.getItem('mops_token');
+      const response = await fetch(`${API_BASE_URL}/start/fly`, { 
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (response.status === 401) {
+        logout()
+        navigate('/auth')
+        return
+      }
       const payload = await response.json().catch(() => null)
       if (!response.ok) throw new Error(payload?.detail ?? 'Не удалось запустить полёт')
       setInfoMessage('Пайплайн съёмки запущен')
@@ -54,7 +65,7 @@ function AppContent() {
     } finally {
       setLoadingMessage(null)
     }
-  }, [])
+  }, [logout, navigate])
 
   const handleUploadFolderForMetashape = useCallback(async (files) => {
     setError(null)
@@ -63,9 +74,17 @@ function AppContent() {
     try {
       const formData = new FormData()
       Array.from(files).forEach((file) => formData.append('files', file))
+      const token = localStorage.getItem('mops_token');
       const response = await fetch(`${API_BASE_URL}/data/upload-and-process-metashape`, {
-        method: 'POST', body: formData,
+        method: 'POST', 
+        body: formData,
+        headers: { 'Authorization': `Bearer ${token}` }
       })
+      if (response.status === 401) {
+        logout()
+        navigate('/auth')
+        return
+      }
       if (!response.ok) {
         const payload = await response.json().catch(() => null)
         throw new Error(payload?.detail ?? 'Не удалось обработать фотографии')
@@ -82,7 +101,7 @@ function AppContent() {
     } finally {
       setLoadingMessage(null)
     }
-  }, [])
+  }, [logout, navigate])
 
   const handleUploadSingleForAI = useCallback(async (file) => {
     setError(null)
@@ -91,9 +110,17 @@ function AppContent() {
     try {
       const formData = new FormData()
       formData.append('file', file)
+      const token = localStorage.getItem('mops_token');
       const response = await fetch(`${API_BASE_URL}/data/upload-and-process-ai`, {
-        method: 'POST', body: formData,
+        method: 'POST', 
+        body: formData,
+        headers: { 'Authorization': `Bearer ${token}` }
       })
+      if (response.status === 401) {
+        logout()
+        navigate('/auth')
+        return
+      }
       if (!response.ok) {
         let errorMessage = 'Не удалось обработать фото'
         try {
@@ -117,7 +144,7 @@ function AppContent() {
     } finally {
       setLoadingMessage(null)
     }
-  }, [])
+  }, [logout, navigate])
 
   return (
     <div className="app">

@@ -1,11 +1,13 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 import './header.css';
 import logoB from '../../assets/logo_b.svg';
 import logoW from '../../assets/logo_w.svg';
 
 export default function Header({ theme, onToggleTheme }) {
     const logo = theme === 'dark' || !theme ? logoW : logoB;
+    const { user, logout } = useAuth();
 
     return (
         <header className="header-wrapper">
@@ -37,6 +39,17 @@ export default function Header({ theme, onToggleTheme }) {
                 </nav>
 
                 <div className="header__actions">
+                    {user ? (
+                        <div className="header__user-info" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', marginRight: '15px', fontSize: '13px' }}>
+                            <span style={{ fontWeight: '600', color: theme === 'dark' ? '#fff' : '#000' }}>{user.name}</span>
+                            <span style={{ opacity: 0.7, color: theme === 'dark' ? '#ccc' : '#666' }}>{user.email}</span>
+                            <button onClick={logout} style={{ background: 'none', border: 'none', color: '#ff4d4f', cursor: 'pointer', fontSize: '12px', marginTop: '4px', padding: 0 }}>Выйти</button>
+                        </div>
+                    ) : (
+                        <NavLink to="/auth" className="nav-link" style={{ marginRight: '15px' }}>
+                            Войти
+                        </NavLink>
+                    )}
                     <button 
                         className="header__theme-toggle"
                         onClick={onToggleTheme}

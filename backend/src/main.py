@@ -3,13 +3,20 @@ import os
 import shutil
 from typing import List, Dict, Any, Optional
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Query
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from src.services.fly import fly_start, DroneConnectionError
 from src.services.grabber import grab_images
 from src.services.ai import process_image, process_ai_image
+
+from src.db.database import Base, engine
+from src.db.models import User
+from src.api.auth import router as auth_router, get_current_user
+
+# Создаем таблицы в БД
+Base.metadata.create_all(bind=engine)
 
 TMP_ROOT = "tmp"
 
@@ -29,30 +36,33 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
+app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
+
 # ================== ВСПОМОГАТЕЛЬНЫЕ ШТУКИ ДЛЯ СЕССИЙ ==================
 
 def _ensure_tmp_root() -> None:
     os.makedirs(TMP_ROOT, exist_ok=True)
 
 
-def _list_session_ids() -> List[int]:
+def _list_session_ids(user_id: int) -> List[int]:
     _ensure_tmp_root()
     ids: List[int] = []
+    prefix = f"tmp_{user_id}_"
     for name in os.listdir(TMP_ROOT):
-        if name.startswith("tmp") and name[3:].isdigit():
-            ids.append(int(name[3:]))
+        if name.startswith(prefix) and name[len(prefix):].isdigit():
+            ids.append(int(name[len(prefix):]))
     return sorted(ids)
 
 
-def _create_session() -> int:
+def _create_session(user_id: int) -> int:
     """
-    Создаёт новую папку tmp{i} с подпапками data, metashape, ai.
+    Создаёт новую папку tmp_{user_id}_{i} с подпапками data, metashape, ai.
     Возвращает i.
     """
-    ids = _list_session_ids()
+    ids = _list_session_ids(user_id)
     next_id = (max(ids) + 1) if ids else 1
 
-    session_dir = os.path.join(TMP_ROOT, f"tmp{next_id}")
+    session_dir = os.path.join(TMP_ROOT, f"tmp_{user_id}_{next_id}")
     os.makedirs(session_dir, exist_ok=True)
 
     for sub in ("data", "metashape", "ai"):
@@ -61,30 +71,30 @@ def _create_session() -> int:
     return next_id
 
 
-def _get_current_session_id() -> int:
+def _get_current_session_id(user_id: int) -> int:
     """
     Возвращает id последней сессии или кидает 404.
     """
-    ids = _list_session_ids()
+    ids = _list_session_ids(user_id)
     if not ids:
         raise HTTPException(status_code=404, detail="Сессий ещё нет")
     return ids[-1]
 
 
-def _require_session(session_id: int) -> None:
+def _require_session(user_id: int, session_id: int) -> None:
     """
-    Проверяем, что tmp{session_id} существует.
+    Проверяем, что tmp_{user_id}_{session_id} существует.
     """
-    path = os.path.join(TMP_ROOT, f"tmp{session_id}")
+    path = os.path.join(TMP_ROOT, f"tmp_{user_id}_{session_id}")
     if not os.path.isdir(path):
-        raise HTTPException(status_code=404, detail=f"Сессия tmp{session_id} не найдена")
+        raise HTTPException(status_code=404, detail=f"Сессия не найдена")
 
 
-def _get_paths(session_id: int) -> Dict[str, str]:
+def _get_paths(user_id: int, session_id: int) -> Dict[str, str]:
     """
     Возвращает пути до папок data, metashape, ai для данной сессии.
     """
-    base = os.path.join(TMP_ROOT, f"tmp{session_id}")
+    base = os.path.join(TMP_ROOT, f"tmp_{user_id}_{session_id}")
     return {
         "base": base,
         "data": os.path.join(base, "data"),
@@ -99,8 +109,6 @@ def _list_images(folder: str) -> List[str]:
     """
     patterns = ("*.jpg", "*.jpeg", "*.png", "*.tif", "*.tiff", "*.bmp")
     files: List[str] = []
-
-
     
     for p in patterns:
         files.extend(glob.glob(os.path.join(folder, p)))
@@ -109,15 +117,15 @@ def _list_images(folder: str) -> List[str]:
 
 # =========================== DATA: ЗАГРУЗКА ===========================
 
-
 async def _save_uploads_to_data(
+    user_id: int,
     session_id: int,
     files: List[UploadFile],
 ) -> List[str]:
     """
-    Сохранение загруженных картинок в tmp{session_id}/data.
+    Сохранение загруженных картинок в tmp_{user_id}_{session_id}/data.
     """
-    paths = _get_paths(session_id)
+    paths = _get_paths(user_id, session_id)
     data_dir = paths["data"]
     os.makedirs(data_dir, exist_ok=True)
 
@@ -130,7 +138,6 @@ async def _save_uploads_to_data(
                 detail=f"Файл {upload.filename} не является изображением",
             )
 
-        # нормальное имя файла
         _, ext = os.path.splitext(upload.filename or "")
         if not ext:
             ext = ".jpg"
@@ -149,8 +156,8 @@ async def _save_uploads_to_data(
 # ========================= ВРЕМЕННАЯ ИММИТАЦИЯ РАБОТЫ METASHAPE =========================
 
 
-def _require_data_not_empty(session_id: int) -> None:
-    paths = _get_paths(session_id)
+def _require_data_not_empty(user_id: int, session_id: int) -> None:
+    paths = _get_paths(user_id, session_id)
     images = _list_images(paths["data"])
     if not images:
         raise HTTPException(
@@ -159,15 +166,10 @@ def _require_data_not_empty(session_id: int) -> None:
         )
 
 
-def process_metashape(session_id: int) -> str:
-    """
-    Запускает обработку фотографий через Metashape.
-    Использует фотографии из data/ и сохраняет ортомозаику в metashape/.
-    Возвращает путь к созданной ортомозаике.
-    """
+def process_metashape(user_id: int, session_id: int) -> str:
     from src.services.metashape import process_metashape as run_metashape
 
-    paths = _get_paths(session_id)
+    paths = _get_paths(user_id, session_id)
     data_dir = paths["data"]
     metashape_dir = paths["metashape"]
     os.makedirs(metashape_dir, exist_ok=True)
@@ -179,7 +181,6 @@ def process_metashape(session_id: int) -> str:
             detail="В папке data нет изображений",
         )
 
-    # Путь для сохранения ортомозаики
     output_path = os.path.join(metashape_dir, "orthomosaic.png")
     project_path = os.path.join(metashape_dir, "project.psx")
 
@@ -195,47 +196,37 @@ def process_metashape(session_id: int) -> str:
             status_code=503,
             detail=f"Metashape недоступен: {str(exc)}",
         ) from exc
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:
         raise HTTPException(
             status_code=500,
             detail=f"Ошибка обработки Metashape: {str(exc)}",
         ) from exc
 
 
-def process_metashape_and_ai(session_id: int) -> str:
-    """
-    Запускает обработку через Metashape, затем автоматически обрабатывает результат через AI.
-    Возвращает путь к обработанному AI изображению.
-    """
-    # Сначала запускаем Metashape
-    metashape_result = process_metashape(session_id)
+def process_metashape_and_ai(user_id: int, session_id: int) -> str:
+    metashape_result = process_metashape(user_id, session_id)
     
-    # Проверяем, что результат Metashape создан
     if not os.path.isfile(metashape_result):
         raise HTTPException(
             status_code=500,
             detail="Metashape не вернул результат",
         )
     
-    # Теперь обрабатываем результат Metashape через AI
-    paths = _get_paths(session_id)
+    paths = _get_paths(user_id, session_id)
     ai_dir = paths["ai"]
     os.makedirs(ai_dir, exist_ok=True)
     
-    # Создаём путь для AI результата
     base_name = os.path.basename(metashape_result)
     name, ext = os.path.splitext(base_name)
     ai_output_path = os.path.join(ai_dir, f"{name}_ai{ext}")
     
     try:
-        # Обрабатываем через AI
         ai_result = process_ai_image(metashape_result, ai_output_path)
         return ai_result
     except FileNotFoundError as exc:
-        # Если модель AI не найдена, возвращаем оригинальный результат Metashape
         shutil.copy2(metashape_result, ai_output_path)
         return ai_output_path
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:
         raise HTTPException(
             status_code=500,
             detail=f"Ошибка обработки AI: {str(exc)}",
@@ -244,9 +235,8 @@ def process_metashape_and_ai(session_id: int) -> str:
 
 # ============================= AI: ПРОЦЕСС =============================
 
-
-def _require_metashape_not_empty(session_id: int) -> None:
-    paths = _get_paths(session_id)
+def _require_metashape_not_empty(user_id: int, session_id: int) -> None:
+    paths = _get_paths(user_id, session_id)
     images = _list_images(paths["metashape"])
     if not images:
         raise HTTPException(
@@ -255,12 +245,8 @@ def _require_metashape_not_empty(session_id: int) -> None:
         )
 
 
-def process_ai_for_session(session_id: int) -> str:
-    """
-    Берём первую картинку из metashape, прогоняем через YOLO (из ai.py),
-    результат сохраняем в tmp{session_id}/ai и возвращаем путь к результату.
-    """
-    paths = _get_paths(session_id)
+def process_ai_for_session(user_id: int, session_id: int) -> str:
+    paths = _get_paths(user_id, session_id)
     metashape_dir = paths["metashape"]
     ai_dir = paths["ai"]
     os.makedirs(ai_dir, exist_ok=True)
@@ -278,7 +264,6 @@ def process_ai_for_session(session_id: int) -> str:
     name, ext = os.path.splitext(base_name)
     output_path = os.path.join(ai_dir, f"{name}_ai{ext}")
 
-    # Зовём нашу функцию из ai.py
     try:
         result_path = process_ai_image(input_path, output_path)
     except FileNotFoundError as exc:
@@ -286,7 +271,7 @@ def process_ai_for_session(session_id: int) -> str:
             status_code=503,
             detail=f"Модель AI недоступна: {str(exc)}",
         ) from exc
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:
         raise HTTPException(
             status_code=500,
             detail=f"Ошибка обработки AI: {str(exc)}",
@@ -297,37 +282,24 @@ def process_ai_for_session(session_id: int) -> str:
 
 # =============================== ENDPOINTЫ ===============================
 
-
 @app.get("/session/new")
-def create_session() -> Dict[str, Any]:
-    """
-    Создать новую tmp{i}.
-    """
-    session_id = _create_session()
-    return {"session_id": session_id, "tmp_folder": f"tmp{session_id}"}
+def create_session(user: User = Depends(get_current_user)) -> Dict[str, Any]:
+    session_id = _create_session(user.id)
+    return {"session_id": session_id, "tmp_folder": f"tmp_{user.id}_{session_id}"}
 
 
 @app.get("/session/current")
-def get_current_session() -> Dict[str, Any]:
-    """
-    Получить id последней созданной tmp{i}.
-    """
-    session_id = _get_current_session_id()
-    return {"session_id": session_id, "tmp_folder": f"tmp{session_id}"}
+def get_current_session(user: User = Depends(get_current_user)) -> Dict[str, Any]:
+    session_id = _get_current_session_id(user.id)
+    return {"session_id": session_id, "tmp_folder": f"tmp_{user.id}_{session_id}"}
 
 
 @app.post("/data/upload")
 async def upload_data(
     files: List[UploadFile] = File(..., description="Список изображений"),
-    session_id: Optional[int] = Query(
-        default=None,
-        description="ID сессии (если не передан — создаётся новая)",
-    ),
+    session_id: Optional[int] = Query(default=None),
+    user: User = Depends(get_current_user)
 ) -> Dict[str, Any]:
-    """
-    Вариант №2: заполнение папки data через POST загрузку файлов.
-    Если файлов нет — 400.
-    """
     if not files:
         raise HTTPException(
             status_code=400,
@@ -335,12 +307,12 @@ async def upload_data(
         )
 
     if session_id is None:
-        session_id = _create_session()
+        session_id = _create_session(user.id)
     else:
-        _require_session(session_id)
+        _require_session(user.id, session_id)
 
-    saved_filenames = await _save_uploads_to_data(session_id, files)
-    paths = _get_paths(session_id)
+    saved_filenames = await _save_uploads_to_data(user.id, session_id, files)
+    paths = _get_paths(user.id, session_id)
 
     return {
         "session_id": session_id,
@@ -350,49 +322,37 @@ async def upload_data(
 
 
 @app.post("/start/fly")
-def start_fly() -> Dict[str, Any]:
-    """
-    Вариант №1: старт пайплайна через fly_start() и grab_images().
-
-    Тут только создаём новую tmp{i} и вызываем две функции.
-    Реализацию fly_start / grab_images ты делаешь сам.
-    """
-    session_id = _create_session()
+def start_fly(user: User = Depends(get_current_user)) -> Dict[str, Any]:
+    session_id = _create_session(user.id)
 
     try:
         fly_start()
         grab_images()
     except DroneConnectionError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:
         raise HTTPException(
             status_code=500,
             detail="Не удалось запустить полёт или получить данные",
         ) from exc
 
-    paths = _get_paths(session_id)
+    paths = _get_paths(user.id, session_id)
     return {
         "session_id": session_id,
         "data_dir": paths["data"],
-        "message": "Пайплайн съёмки запущен (fly_start + grab_images)",
+        "message": "Пайплайн съёмки запущен",
     }
 
 
 @app.get("/metashape/run")
 def run_metashape_endpoint(
-    session_id: int = Query(..., description="ID сессии tmp{i}"),
+    session_id: int = Query(...),
+    user: User = Depends(get_current_user)
 ) -> FileResponse:
-    """
-    Запуск обработки Metashape с автоматической AI обработкой:
-    - проверяем, что есть сессия и картинки в data;
-    - запускаем Metashape;
-    - автоматически обрабатываем результат через AI;
-    - возвращаем результат AI обработки.
-    """
-    _require_session(session_id)
-    _require_data_not_empty(session_id)
+    _require_session(user.id, session_id)
+    _require_data_not_empty(user.id, session_id)
 
-    result_path = process_metashape_and_ai(session_id)
+    result_path = process_metashape_and_ai(user.id, session_id)
 
     if not os.path.isfile(result_path):
         raise HTTPException(
@@ -409,18 +369,13 @@ def run_metashape_endpoint(
 
 @app.get("/ai/run")
 def run_ai_endpoint(
-    session_id: int = Query(..., description="ID сессии tmp{i}"),
+    session_id: int = Query(...),
+    user: User = Depends(get_current_user)
 ) -> FileResponse:
-    """
-    Кнопка AI-процесса:
-    - проверяем, что есть результат Metashape;
-    - прогоняем через YOLO из ai.py;
-    - возвращаем картинку из папки ai как FileResponse.
-    """
-    _require_session(session_id)
-    _require_metashape_not_empty(session_id)
+    _require_session(user.id, session_id)
+    _require_metashape_not_empty(user.id, session_id)
 
-    result_path = process_ai_for_session(session_id)
+    result_path = process_ai_for_session(user.id, session_id)
 
     if not os.path.isfile(result_path):
         raise HTTPException(
@@ -437,39 +392,24 @@ def run_ai_endpoint(
 
 @app.post("/data/upload-and-process-metashape")
 async def upload_and_process_metashape(
-    files: List[UploadFile] = File(..., description="Список изображений для обработки Metashape"),
-    session_id: Optional[int] = Query(
-        default=None,
-        description="ID сессии (если не передан — создаётся новая)",
-    ),
+    files: List[UploadFile] = File(...),
+    session_id: Optional[int] = Query(default=None),
+    user: User = Depends(get_current_user)
 ) -> FileResponse:
-    """
-    Загружает папку с фотографиями, запускает обработку Metashape,
-    затем автоматически обрабатывает результат через AI.
-    Возвращает результат AI обработки.
-    """
     if not files:
-        raise HTTPException(
-            status_code=400,
-            detail="Нужно загрузить хотя бы один файл",
-        )
+        raise HTTPException(status_code=400, detail="Нужно загрузить хотя бы один файл")
 
     if session_id is None:
-        session_id = _create_session()
+        session_id = _create_session(user.id)
     else:
-        _require_session(session_id)
+        _require_session(user.id, session_id)
 
-    # Сохраняем файлы в data
-    await _save_uploads_to_data(session_id, files)
+    await _save_uploads_to_data(user.id, session_id, files)
 
-    # Запускаем Metashape, затем автоматически обрабатываем через AI
-    result_path = process_metashape_and_ai(session_id)
+    result_path = process_metashape_and_ai(user.id, session_id)
 
     if not os.path.isfile(result_path):
-        raise HTTPException(
-            status_code=500,
-            detail="Обработка не вернула результат",
-        )
+        raise HTTPException(status_code=500, detail="Обработка не вернула результат")
 
     return FileResponse(
         result_path,
@@ -480,32 +420,22 @@ async def upload_and_process_metashape(
 
 @app.post("/data/upload-and-process-ai")
 async def upload_and_process_ai(
-    file: UploadFile = File(..., description="Одно изображение для обработки AI"),
-    session_id: Optional[int] = Query(
-        default=None,
-        description="ID сессии (если не передан — создаётся новая)",
-    ),
+    file: UploadFile = File(...),
+    session_id: Optional[int] = Query(default=None),
+    user: User = Depends(get_current_user)
 ) -> FileResponse:
-    """
-    Загружает одно фото и автоматически обрабатывает его через AI (без Metashape).
-    Возвращает результат обработки AI.
-    """
     if not file.content_type.startswith("image/"):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Файл {file.filename} не является изображением",
-        )
+        raise HTTPException(status_code=400, detail="Файл не является изображением")
 
     if session_id is None:
-        session_id = _create_session()
+        session_id = _create_session(user.id)
     else:
-        _require_session(session_id)
+        _require_session(user.id, session_id)
 
-    paths = _get_paths(session_id)
+    paths = _get_paths(user.id, session_id)
     ai_dir = paths["ai"]
     os.makedirs(ai_dir, exist_ok=True)
 
-    # Сохраняем файл напрямую в папку ai
     _, ext = os.path.splitext(file.filename or "")
     if not ext:
         ext = ".jpg"
@@ -516,30 +446,20 @@ async def upload_and_process_ai(
     with open(input_path, "wb") as f:
         f.write(content)
 
-    # Обрабатываем через AI
     base_name = os.path.basename(input_path)
     name, ext = os.path.splitext(base_name)
     output_path = os.path.join(ai_dir, f"{name}_processed{ext}")
 
     try:
         result_path = process_ai_image(input_path, output_path)
-    except FileNotFoundError as exc:
-        # Fallback: если модель не найдена, возвращаем оригинальное изображение
-        # Копируем оригинал как результат
+    except FileNotFoundError:
         shutil.copy2(input_path, output_path)
         result_path = output_path
-        # Можно также вернуть предупреждение, но для простоты просто возвращаем оригинал
-    except Exception as exc:  # pylint: disable=broad-except
-        raise HTTPException(
-            status_code=500,
-            detail=f"Ошибка обработки AI: {str(exc)}",
-        ) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Ошибка обработки AI: {str(exc)}") from exc
 
     if not os.path.isfile(result_path):
-        raise HTTPException(
-            status_code=500,
-            detail="AI не вернул результирующее изображение",
-        )
+        raise HTTPException(status_code=500, detail="AI не вернул результирующее изображение")
 
     return FileResponse(
         result_path,
