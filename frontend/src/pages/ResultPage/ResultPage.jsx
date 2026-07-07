@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './ResultPage.css';
 import ImageViewer from '../../components/imageViewer/imageViewer';
-import { Box, Image as ImageIcon, CheckCircle2, Upload, BoxSelect, Plus, X, Trash2 } from 'lucide-react';
+import { Box, Image as ImageIcon, CheckCircle2, Upload, BoxSelect, Plus, X, Trash2, Sparkles } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
@@ -14,14 +14,15 @@ export default function ResultPage() {
   const [projects, setProjects] = useState([]);
   const [activeProject, setActiveProject] = useState(null);
   const [images, setImages] = useState({ projectId: null, ai_input: [], ai_output: [], metashape_input: [], metashape_output: [] });
-  const [activeGroup, setActiveGroup] = useState('ai'); // 'ai' | 'metashape'
-  const [showAIOutput, setShowAIOutput] = useState(false);
+  const [activeGroup, setActiveGroup] = useState('ai');
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
-  const [fullscreenImage, setFullscreenImage] = useState(null);
+  const [fullscreenImageIndex, setFullscreenImageIndex] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
   const [projectStatus, setProjectStatus] = useState({ ai: 'idle', metashape: 'idle', error: null });
+  const [processingImages, setProcessingImages] = useState(new Set());
+  const activeRequests = useRef(new Set());
 
   const showError = (msg) => {
     setErrorMsg(msg);
@@ -34,7 +35,7 @@ export default function ResultPage() {
       credentials: 'include'
     });
     if (res.status === 401) { logout(); navigate('/auth'); throw new Error('Unauthorized'); }
-    if (!res.ok) {
+    if (!res.ok && !options.skipError) {
         let msg = 'Ошибка сервера';
         try { const data = await res.json(); msg = data.detail || msg; } catch(e) {}
         showError(msg);
@@ -59,14 +60,43 @@ export default function ResultPage() {
       const res = await authFetch(`${API_BASE_URL}/api/projects/${projectId}/images`);
       const data = await res.json();
       setImages({ projectId, ...data });
+      
+      const ongoing = [...(data.processing_ai || []), ...(data.processing_metashape || [])];
+      if (ongoing.length > 0) {
+          setProcessingImages(prev => new Set([...prev, ...ongoing]));
+          ongoing.forEach(img => {
+              if (!activeRequests.current.has(img)) {
+                  activeRequests.current.add(img);
+                  const fKey = data.processing_ai?.includes(img) ? 'ai_input' : 'metashape_input';
+                  (async () => {
+                      try {
+                          await authFetch(`${API_BASE_URL}/api/projects/${projectId}/images/${fKey}/${img}/process_ai`, { method: 'POST' });
+                          await fetchImages(projectId);
+                      } finally {
+                          activeRequests.current.delete(img);
+                          setProcessingImages(prev => {
+                              const next = new Set(prev);
+                              next.delete(img);
+                              return next;
+                          });
+                      }
+                  })();
+              }
+          });
+      }
     } catch (e) { console.error(e); }
   };
 
   useEffect(() => {
     if (activeProject?.id) { 
-      setImages({ projectId: null, ai_input: [], ai_output: [], metashape_input: [], metashape_output: [] });
+      setImages({ projectId: null, ai_input: [], ai_output: [], metashape_input: [], metashape_project: [], metashape_ai_output: [] });
       setObjectUrls({});
-      setProjectStatus({ ai: 'idle', metashape: 'idle', error: null });
+      setProjectStatus({ 
+          ai: activeProject.ai_status || 'idle', 
+          metashape: activeProject.metashape_status || 'idle', 
+          error: activeProject.error_message || null 
+      });
+      setProcessingImages(new Set());
       fetchImages(activeProject.id); 
     }
   }, [activeProject?.id]);
@@ -132,8 +162,9 @@ export default function ResultPage() {
       await authFetch(`${API_BASE_URL}/api/projects/${activeProject.id}/upload/${group}`, {
         method: 'POST', body: formData
       });
-      // Автоматически запускаем обработку после успешной загрузки
-      await authFetch(`${API_BASE_URL}/api/projects/${activeProject.id}/process/${group}`, { method: 'POST' });
+      if (group === 'ai') {
+          await authFetch(`${API_BASE_URL}/api/projects/${activeProject.id}/process/${group}`, { method: 'POST' });
+      }
       fetchImages(activeProject.id);
     } catch (e) { console.error(e); }
     setIsUploading(false);
@@ -149,6 +180,21 @@ export default function ResultPage() {
     setIsUploading(false);
   };
 
+  const handleDeleteImage = async (filename, group) => {
+    if (!window.confirm('Удалить это фото?')) return;
+    try {
+      await authFetch(`${API_BASE_URL}/api/projects/${activeProject.id}/images/${group}/${filename}`, { method: 'DELETE' });
+      fetchImages(activeProject.id);
+    } catch (e) {}
+  };
+
+  const handleProcessSingle = async (filename, group) => {
+    try {
+      await authFetch(`${API_BASE_URL}/api/projects/${activeProject.id}/images/${group}/${filename}/process_ai`, { method: 'POST' });
+      fetchImages(activeProject.id);
+    } catch (e) {}
+  };
+
   const getImageUrl = (group, filename) => {
     // With HttpOnly cookies, we can just use the URL directly in <img src>
   };
@@ -160,7 +206,7 @@ export default function ResultPage() {
     const currentProjectId = activeProject.id;
     
     const missingKeys = [];
-    for (const group of ['ai_input', 'ai_output', 'metashape_input', 'metashape_output']) {
+    for (const group of ['ai_input', 'ai_output', 'metashape_input', 'metashape_project', 'metashape_ai_output']) {
         for (const img of images[group] || []) {
             const key = `${currentProjectId}_${group}_${img}`;
             if (!objectUrls[key]) {
@@ -192,14 +238,44 @@ export default function ResultPage() {
     fetchMissing();
   }, [images, activeProject?.id, objectUrls]);
 
+  const handleForceRefetch = async (img, folder) => {
+      try {
+          const res = await authFetch(`${API_BASE_URL}/api/projects/${activeProject.id}/images/${folder}/${img}`);
+          if (res.ok) {
+              const blob = await res.blob();
+              const url = URL.createObjectURL(blob);
+              setObjectUrls(prev => ({ ...prev, [`${activeProject.id}_${folder}_${img}`]: url }));
+          }
+      } catch (e) {}
+  };
+
   const currentGroupImages = activeGroup === 'ai' 
-    ? (showAIOutput ? images.ai_output : images.ai_input)
-    : (activeGroup === 'metashape' ? images.metashape_input : images.metashape_output);
-    
-  const currentGroupLabel = activeGroup === 'ai' ? 'ai' : 'metashape';
+      ? images.ai_input 
+      : (activeGroup === 'metashape' ? images.metashape_input : images.metashape_project);
+      
   const folderKey = activeGroup === 'ai' 
-    ? (showAIOutput ? 'ai_output' : 'ai_input')
-    : (activeGroup === 'metashape' ? 'metashape_input' : 'metashape_output');
+      ? 'ai_input' 
+      : (activeGroup === 'metashape' ? 'metashape_input' : 'metashape_project');
+
+  const isImageProcessing = (img) => {
+      if (processingImages.has(img)) return true;
+      if (activeGroup === 'ai' && projectStatus.ai === 'processing' && !images.ai_output.includes(img)) return true;
+      return false;
+  };
+
+  const startSingleProcess = async (img) => {
+      setProcessingImages(prev => new Set(prev).add(img));
+      try {
+          await authFetch(`${API_BASE_URL}/api/projects/${activeProject.id}/images/${folderKey}/${img}/process_ai`, { method: 'POST' });
+          await fetchImages(activeProject.id);
+      } finally {
+          setProcessingImages(prev => {
+              const next = new Set(prev);
+              next.delete(img);
+              return next;
+          });
+      }
+  };
 
   return (
     <div className="result-page page-transition">
@@ -242,7 +318,7 @@ export default function ResultPage() {
         <div className="upload-section">
           <label className="upload-btn primary">
             <Upload size={16} /> Metashape загрузка
-            <input type="file" webkitdirectory="true" directory="true" multiple style={{ display: 'none' }} onChange={(e) => handleUpload(e.target.files, 'metashape')} />
+            <input type="file" multiple accept="image/*" style={{ display: 'none' }} onChange={(e) => handleUpload(e.target.files, 'metashape')} />
           </label>
           <label className="upload-btn secondary">
             <ImageIcon size={16} /> Одиночные для ИИ
@@ -276,30 +352,50 @@ export default function ResultPage() {
 
         <div className="content-body">
             <div className="gallery-panel">
-                <div className="gallery-toolbar" style={{ justifyContent: 'space-between', opacity: activeGroup === 'ai' ? 1 : 0, pointerEvents: activeGroup === 'ai' ? 'auto' : 'none' }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:'12px' }}>
-                        <span className="toolbar-label">Результат обработки:</span>
-                        <label className="toggle-switch">
-                            <input type="checkbox" checked={showAIOutput} onChange={() => setShowAIOutput(!showAIOutput)} />
-                            <span className="toggle-slider"></span>
-                        </label>
-                        <span className="toolbar-status">{showAIOutput ? 'Показан' : 'Исходники'}</span>
+                <div className="gallery-header-status" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', alignItems: 'center' }}>
+                    <div className="status-banners" style={{ flex: 1 }}>
+                        {projectStatus.ai === 'processing' && activeGroup === 'ai' && (
+                            <div style={{ display: 'inline-flex', gap: '8px', alignItems: 'center', background: 'rgba(255, 255, 255, 0.1)', padding: '8px 16px', borderRadius: '12px', fontSize: '13px' }}>
+                                <Sparkles className="rotating" size={16} /> Идет пакетная обработка нейросетью...
+                            </div>
+                        )}
+                        {projectStatus.metashape === 'processing' && activeGroup === 'metashape' && (
+                            <div style={{ display: 'inline-flex', gap: '8px', alignItems: 'center', background: 'rgba(255, 255, 255, 0.1)', padding: '8px 16px', borderRadius: '12px', fontSize: '13px' }}>
+                                <BoxSelect className="rotating" size={16} /> Сборка фотограмметрической модели...
+                            </div>
+                        )}
+                    </div>
+                    <div>
+                        {activeGroup === 'metashape' && projectStatus.metashape !== 'processing' && currentGroupImages.length > 0 && (
+                            <button className="process-btn" onClick={() => handleProcess('metashape')} disabled={isUploading} style={{ background: 'rgba(255, 255, 255, 0.1) !important', color: '#fff !important', border: '1px solid rgba(255, 255, 255, 0.2)' }}>
+                                <CheckCircle2 size={16} /> Собрать модель
+                            </button>
+                        )}
                     </div>
                 </div>
 
                 <div className="gallery-grid">
-                {((activeGroup === 'ai' && projectStatus.ai === 'processing') || 
-                  (activeGroup !== 'ai' && projectStatus.metashape === 'processing')) ? (
-                    <div className="gallery-empty" style={{ gridColumn: '1 / -1' }}>
-                        <div style={{ marginBottom: '16px' }}><BoxSelect size={32} className="placeholder-icon rotating" /></div>
-                        Обработка на сервере в фоновом режиме... Можете закрыть страницу или выбрать другой проект.
-                    </div>
-                ) : currentGroupImages.length > 0 ? (
+                {currentGroupImages.length > 0 ? (
                     currentGroupImages.map((img, i) => {
                         const url = objectUrls[`${activeProject.id}_${folderKey}_${img}`];
+                        const isProc = isImageProcessing(img);
                         return (
-                        <div key={i} className="gallery-thumbnail" onClick={() => setFullscreenImage(url)}>
-                            {url ? <img src={url} alt={`Снимок ${i+1}`} loading="lazy" /> : <div className="loading-placeholder">Загрузка...</div>}
+                        <div key={i} className={`gallery-thumbnail ${isProc ? 'processing' : ''}`} onClick={() => !isProc && setFullscreenImageIndex(i)} style={{ position: 'relative' }}>
+                            {url ? <img src={url} alt={`Снимок ${i+1}`} loading="lazy" style={{ opacity: isProc ? 0.5 : 1, transition: '0.3s' }} /> : <div className="loading-placeholder">Загрузка...</div>}
+                            
+                            {isProc && (
+                                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.5)', zIndex: 10 }}>
+                                    <Sparkles className="rotating" size={32} style={{ color: '#fff' }} />
+                                </div>
+                            )}
+
+                            {!isProc && (
+                                <div className="thumbnail-actions" onClick={e => e.stopPropagation()}>
+                                    <button className="action-btn delete" title="Удалить" onClick={(e) => { e.stopPropagation(); handleDeleteImage(img, folderKey); }}>
+                                        <Trash2 size={16} />
+                                    </button>
+                                </div>
+                            )}
                         </div>
                         )
                     })
@@ -313,11 +409,30 @@ export default function ResultPage() {
         )}
       </div>
       
-      {fullscreenImage && (
-        <div className="fullscreen-modal" onClick={() => setFullscreenImage(null)}>
-            <div className="fullscreen-close" onClick={() => setFullscreenImage(null)}><X size={24}/></div>
+      {fullscreenImageIndex !== null && (
+        <div className="fullscreen-modal" onClick={() => setFullscreenImageIndex(null)}>
+            <div className="fullscreen-close" onClick={() => setFullscreenImageIndex(null)}><X size={24}/></div>
             <div className="fullscreen-content" onClick={e => e.stopPropagation()}>
-                <ImageViewer imageSrc={fullscreenImage} />
+                <ImageViewer 
+                    globalImages={images}
+                    images={currentGroupImages}
+                    currentIndex={fullscreenImageIndex}
+                    onNavigate={(dir) => {
+                        let next = fullscreenImageIndex + dir;
+                        while (next >= 0 && next < currentGroupImages.length) {
+                            if (!isImageProcessing(currentGroupImages[next])) {
+                                setFullscreenImageIndex(next);
+                                return;
+                            }
+                            next += dir;
+                        }
+                    }}
+                    onClose={() => setFullscreenImageIndex(null)}
+                    folderKey={folderKey}
+                    projectId={activeProject.id}
+                    objectUrls={objectUrls}
+                    startSingleProcess={startSingleProcess}
+                />
             </div>
         </div>
       )}

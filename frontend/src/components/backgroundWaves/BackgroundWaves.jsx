@@ -15,7 +15,6 @@ export default function BackgroundWaves() {
 
     const particles = [];
     const properties = {
-      // ВОЗВРАЩАЕМ ИСХОДНЫЕ НАСТРОЙКИ (Густота, радиус, скорость)
       particleCount: Math.min(250, Math.floor((w * h) / 10000)),
       linkRadius: 180,
       moveSpeed: 0.3,
@@ -30,7 +29,8 @@ export default function BackgroundWaves() {
     window.addEventListener('mousemove', handleMouseMove);
 
     class Particle {
-      constructor() {
+      constructor(id) {
+        this.id = id;
         this.x = Math.random() * w;
         this.y = Math.random() * h;
         this.vx = (Math.random() - 0.5) * properties.moveSpeed;
@@ -43,7 +43,6 @@ export default function BackgroundWaves() {
         if (mouse.x != null && mouse.y != null) {
           let dx = mouse.x - this.x;
           let dy = mouse.y - this.y;
-          // Оптимизация 1: Квадрат расстояния вместо корня
           let distSq = dx * dx + dy * dy;
           let radiusSq = mouse.radius * mouse.radius;
           
@@ -63,16 +62,14 @@ export default function BackgroundWaves() {
     }
 
     for (let i = 0; i < properties.particleCount; i++) {
-      particles.push(new Particle());
+      particles.push(new Particle(i));
     }
 
     const radiusSq = properties.linkRadius * properties.linkRadius;
-    
-    // Оптимизация 2: Ограничение FPS для фона.
-    // Фону не нужно обновляться 144 раза в секунду, 30 FPS достаточно для плавной анимации,
-    // и это сразу срезает нагрузку на процессор в 2-4 раза на игровых мониторах.
+    const cellSize = properties.linkRadius;
+
     let lastTime = 0;
-    const fpsInterval = 1000 / 30; // 30 кадров в секунду
+    const fpsInterval = 1000 / 30; // 30 FPS
 
     const draw = (currentTime) => {
       animationFrameId = requestAnimationFrame(draw);
@@ -83,77 +80,101 @@ export default function BackgroundWaves() {
 
       ctx.clearRect(0, 0, w, h);
 
+      // Пространственная сетка (Spatial Hashing)
+      // Разбиваем экран на ячейки размером с linkRadius.
+      // Это позволяет не проверять каждую частицу с каждой (что давало 2.6 млн итераций),
+      // а проверять только соседние ячейки (снижает количество итераций до ~25 тысяч!)
+      const cols = Math.ceil(w / cellSize);
+      const rows = Math.ceil(h / cellSize);
+      const grid = new Array(cols * rows);
+      for (let i = 0; i < grid.length; i++) grid[i] = [];
+
       for (let i = 0; i < particles.length; i++) {
         particles[i].update();
+        let col = Math.floor(particles[i].x / cellSize);
+        let row = Math.floor(particles[i].y / cellSize);
+        if (col < 0) col = 0; if (col >= cols) col = cols - 1;
+        if (row < 0) row = 0; if (row >= rows) row = rows - 1;
+        grid[row * cols + col].push(particles[i]);
       }
 
-      particles.sort((a, b) => a.x - b.x);
-
-      // Оптимизация 3: Использование rgb(224, 38, 0) и globalAlpha 
-      // Вместо создания новой строки rgba(224, 38, 0, alpha) тысячи раз в секунду
+      // Отрисовка
       for (let i = 0; i < particles.length; i++) {
-        for (let j = i + 1; j < particles.length; j++) {
-          let dx = particles[j].x - particles[i].x;
-          
-          if (dx > properties.linkRadius) break;
+        let pI = particles[i];
+        
+        let colI = Math.floor(pI.x / cellSize);
+        let rowI = Math.floor(pI.y / cellSize);
+        if (colI < 0) colI = 0; if (colI >= cols) colI = cols - 1;
+        if (rowI < 0) rowI = 0; if (rowI >= rows) rowI = rows - 1;
 
-          let dy = particles[j].y - particles[i].y;
-          // Оптимизация 4: Быстрые проверки по квадратам
-          if (dy * dy > radiusSq) continue;
+        // Собираем соседей только из текущей и 8 смежных ячеек
+        let neighbors = [];
+        for (let r = Math.max(0, rowI - 1); r <= Math.min(rows - 1, rowI + 1); r++) {
+          for (let c = Math.max(0, colI - 1); c <= Math.min(cols - 1, colI + 1); c++) {
+            let cell = grid[r * cols + c];
+            for (let n = 0; n < cell.length; n++) {
+              let pN = cell[n];
+              // Проверяем только частицы с бОльшим ID, чтобы избежать двойной отрисовки
+              if (pN.id > pI.id) {
+                let dx = pN.x - pI.x;
+                let dy = pN.y - pI.y;
+                if (dx * dx + dy * dy < radiusSq) {
+                  neighbors.push(pN);
+                }
+              }
+            }
+          }
+        }
 
-          let distSq = dx * dx + dy * dy;
-          if (distSq > radiusSq) continue;
+        // Отрисовка связей с найденными соседями
+        for (let j = 0; j < neighbors.length; j++) {
+          let pJ = neighbors[j];
+          let dist = Math.sqrt(Math.pow(pJ.x - pI.x, 2) + Math.pow(pJ.y - pI.y, 2));
 
-          let dist = Math.sqrt(distSq);
-
-          // Линии (Возвращаем 1 в 1 как было)
+          // Линии
           const lineAlpha = 0.15 - (dist / properties.linkRadius) * 0.15;
-          ctx.beginPath();
-          ctx.globalAlpha = lineAlpha;
-          ctx.strokeStyle = "#ffffff";
-          ctx.lineWidth = 1;
-          ctx.moveTo(particles[i].x, particles[i].y);
-          ctx.lineTo(particles[j].x, particles[j].y);
-          ctx.stroke();
+          if (lineAlpha > 0) {
+            ctx.beginPath();
+            ctx.globalAlpha = lineAlpha;
+            ctx.strokeStyle = "#ffffff";
+            ctx.lineWidth = 1;
+            ctx.moveTo(pI.x, pI.y);
+            ctx.lineTo(pJ.x, pJ.y);
+            ctx.stroke();
+          }
 
-          // Треугольники (Возвращаем 1 в 1 как было, с наложением друг на друга)
-          for (let k = j + 1; k < particles.length; k++) {
-            let dx3 = particles[k].x - particles[i].x;
-            if (dx3 > properties.linkRadius) break;
-
-            let dy3 = particles[k].y - particles[i].y;
-            if (dy3 * dy3 > radiusSq) continue;
-
-            let dx2 = particles[k].x - particles[j].x;
-            if (dx2 * dx2 > radiusSq) continue;
-            let dy2 = particles[k].y - particles[j].y;
-            if (dy2 * dy2 > radiusSq) continue;
-
+          // Треугольники
+          // Ищем третью точку только среди уже найденных соседей
+          for (let k = 0; k < neighbors.length; k++) {
+            let pK = neighbors[k];
+            // Избегаем дубликатов (pJ.id < pK.id)
+            if (pK.id <= pJ.id) continue;
+            
+            let dx2 = pK.x - pJ.x;
+            let dy2 = pK.y - pJ.y;
             let dist2Sq = dx2 * dx2 + dy2 * dy2;
-            if (dist2Sq > radiusSq) continue;
-
-            let dist3Sq = dx3 * dx3 + dy3 * dy3;
-            if (dist3Sq > radiusSq) continue;
-
-            let dist2 = Math.sqrt(dist2Sq);
-            let dist3 = Math.sqrt(dist3Sq);
-
-            let faceAlpha = 0.04 - (dist + dist2 + dist3) / (properties.linkRadius * 3) * 0.04;
-            if (faceAlpha > 0) {
-              ctx.beginPath();
-              ctx.globalAlpha = faceAlpha * 1.5;
-              ctx.fillStyle = "#e02600"; // Точный цвет --color-accent
-              ctx.moveTo(particles[i].x, particles[i].y);
-              ctx.lineTo(particles[j].x, particles[j].y);
-              ctx.lineTo(particles[k].x, particles[k].y);
-              ctx.closePath();
-              ctx.fill();
+            
+            // Если pJ и pK близко друг к другу
+            if (dist2Sq < radiusSq) {
+              let dist2 = Math.sqrt(dist2Sq);
+              let dist3 = Math.sqrt(Math.pow(pK.x - pI.x, 2) + Math.pow(pK.y - pI.y, 2));
+              
+              let faceAlpha = 0.04 - (dist + dist2 + dist3) / (properties.linkRadius * 3) * 0.04;
+              if (faceAlpha > 0) {
+                ctx.beginPath();
+                ctx.globalAlpha = faceAlpha * 1.5;
+                ctx.fillStyle = "#e02600";
+                ctx.moveTo(pI.x, pI.y);
+                ctx.lineTo(pJ.x, pJ.y);
+                ctx.lineTo(pK.x, pK.y);
+                ctx.closePath();
+                ctx.fill();
+              }
             }
           }
         }
       }
       
-      // Сбрасываем прозрачность
       ctx.globalAlpha = 1.0;
     };
 
