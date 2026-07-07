@@ -4,7 +4,8 @@ import shutil
 import json
 import uuid
 import asyncio
-from typing import List, Dict, Any
+import time
+from typing import List, Dict, Any, Set, Tuple
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
@@ -13,8 +14,8 @@ from src.db.models import User, Project
 from src.api.auth import get_current_user
 from src.schemas.project import ProjectCreate, ProjectResponse
 from src.services.ai import process_ai_image
-
 router = APIRouter()
+processing_locks: Set[Tuple[int, str, str]] = set()
 
 PROJECTS_ROOT = "data/projects"
 
@@ -31,16 +32,20 @@ def set_project_status(project_id: int, db: Session, update_data: dict):
 
 def _ensure_project_dirs(project_id: int):
     base = os.path.join(PROJECTS_ROOT, str(project_id))
-    for sub in ("ai_input", "ai_output", "metashape_input", "metashape_output"):
+    for sub in ("ai_input", "ai_output", "metashape_input", "metashape_project", "metashape_ai_output"):
         os.makedirs(os.path.join(base, sub), exist_ok=True)
     return base
 
 def _get_images(folder: str) -> List[str]:
-    patterns = ("*.jpg", "*.jpeg", "*.png", "*.tif", "*.tiff", "*.bmp")
+    if not os.path.exists(folder):
+        return []
+    valid_exts = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp"}
     files = []
-    for p in patterns:
-        files.extend(glob.glob(os.path.join(folder, p)))
-    return sorted([os.path.basename(f) for f in files])
+    for f in os.listdir(folder):
+        if os.path.splitext(f)[1].lower() in valid_exts:
+            files.append(os.path.join(folder, f))
+    files.sort(key=lambda x: os.path.getmtime(x))
+    return [os.path.basename(f) for f in files]
 
 @router.post("/", response_model=ProjectResponse)
 def create_project(project_in: ProjectCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -99,15 +104,25 @@ async def upload_photos(
     base = _ensure_project_dirs(project.id)
     dest_dir = os.path.join(base, "ai_input" if group == "ai" else "metashape_input")
     
+    if group == "metashape":
+        for d in [dest_dir, os.path.join(base, "metashape_project"), os.path.join(base, "metashape_ai_output")]:
+            if os.path.exists(d):
+                for f in os.listdir(d):
+                    fp = os.path.join(d, f)
+                    if os.path.isfile(fp): os.remove(fp)
+    
     saved = []
-    for upload in files:
+    for idx, upload in enumerate(files):
         if not upload.content_type.startswith("image/"):
             continue
         content = await upload.read()
         if not is_valid_image(content):
             continue
         ext = os.path.splitext(upload.filename)[1].lower()
-        safe_filename = f"{uuid.uuid4().hex}{ext}"
+        if group == "metashape":
+            safe_filename = os.path.basename(upload.filename)
+        else:
+            safe_filename = f"{uuid.uuid4().hex}{ext}"
         dest_path = os.path.join(dest_dir, safe_filename)
         with open(dest_path, "wb") as f:
             f.write(content)
@@ -122,11 +137,17 @@ def list_images(project_id: int, db: Session = Depends(get_db), current_user: Us
         raise HTTPException(status_code=404, detail="Project not found")
         
     base = _ensure_project_dirs(project.id)
+    ai_proc = [fname for (pid, grp, fname) in processing_locks if pid == project.id and grp == "ai_input"]
+    meta_proc = [fname for (pid, grp, fname) in processing_locks if pid == project.id and grp == "metashape_input"]
+
     return {
         "ai_input": _get_images(os.path.join(base, "ai_input")),
         "ai_output": _get_images(os.path.join(base, "ai_output")),
         "metashape_input": _get_images(os.path.join(base, "metashape_input")),
-        "metashape_output": _get_images(os.path.join(base, "metashape_output"))
+        "metashape_project": _get_images(os.path.join(base, "metashape_project")),
+        "metashape_ai_output": _get_images(os.path.join(base, "metashape_ai_output")),
+        "processing_ai": ai_proc,
+        "processing_metashape": meta_proc
     }
 
 @router.get("/{project_id}/images/{group}/{filename}")
@@ -135,7 +156,7 @@ def get_image(project_id: int, group: str, filename: str, db: Session = Depends(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
         
-    if group not in ["ai_input", "ai_output", "metashape_input", "metashape_output"]:
+    if group not in ["ai_input", "ai_output", "metashape_input", "metashape_project", "metashape_ai_output"]:
         raise HTTPException(status_code=400, detail="Invalid group")
         
     file_path = os.path.join(PROJECTS_ROOT, str(project.id), group, filename)
@@ -143,6 +164,59 @@ def get_image(project_id: int, group: str, filename: str, db: Session = Depends(
         raise HTTPException(status_code=404, detail="Image not found")
         
     return FileResponse(file_path)
+
+@router.delete("/{project_id}/images/{group}/{filename}")
+def delete_image(project_id: int, group: str, filename: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if group not in ["ai_input", "ai_output", "metashape_input", "metashape_project", "metashape_ai_output"]:
+        raise HTTPException(status_code=400, detail="Invalid group")
+    project = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+        
+    file_path = os.path.join(PROJECTS_ROOT, str(project.id), group, filename)
+    if os.path.exists(file_path):
+        os.remove(file_path)
+    return {"status": "deleted"}
+
+@router.post("/{project_id}/images/{group}/{filename}/process_ai")
+def process_single_image_ai(project_id: int, group: str, filename: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if group not in ["ai_input", "metashape_input"]:
+        raise HTTPException(status_code=400, detail="Single image processing is only allowed for input folders")
+        
+    project = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+        
+    base = os.path.join(PROJECTS_ROOT, str(project.id))
+    input_dir = os.path.join(base, group)
+    
+    if group == "ai_input":
+        output_dir = os.path.join(base, "ai_output")
+    else:
+        output_dir = os.path.join(base, "metashape_ai_output")
+    
+    if not os.path.exists(os.path.join(input_dir, filename)):
+         raise HTTPException(status_code=404, detail="Image not found")
+         
+    lock_key = (project.id, group, filename)
+    if lock_key in processing_locks:
+        while lock_key in processing_locks:
+            time.sleep(0.5)
+        return {"status": "done"}
+        
+    processing_locks.add(lock_key)
+    try:
+        from src.services.ai import process_ai_image
+        process_ai_image(os.path.join(input_dir, filename), os.path.join(output_dir, filename))
+    except Exception as e:
+        if lock_key in processing_locks:
+            processing_locks.remove(lock_key)
+        raise HTTPException(status_code=500, detail=f"Ошибка обработки ИИ: {str(e)}")
+    finally:
+        if lock_key in processing_locks:
+            processing_locks.remove(lock_key)
+        
+    return {"status": "done"}
 
 @router.get("/{project_id}/status")
 def get_project_status(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -243,7 +317,7 @@ def process_metashape(project_id: int, background_tasks: BackgroundTasks, db: Se
         
     base = _ensure_project_dirs(project.id)
     input_dir = os.path.join(base, "metashape_input")
-    output_dir = os.path.join(base, "metashape_output")
+    output_dir = os.path.join(base, "metashape_project")
     
     images = _get_images(input_dir)
     if not images:
