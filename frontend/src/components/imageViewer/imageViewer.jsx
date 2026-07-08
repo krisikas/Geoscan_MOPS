@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, RefreshCw, Layers } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RefreshCw, ZoomIn, ZoomOut, RefreshCcw, X } from 'lucide-react';
 import './imageViewer.css';
 
 const ImageViewer = ({ 
@@ -19,7 +19,6 @@ const ImageViewer = ({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   
   const [showDefects, setShowDefects] = useState(false);
-  const [API_BASE_URL] = useState(import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000');
   
   const imageRef = useRef(null);
   const containerRef = useRef(null);
@@ -68,14 +67,8 @@ const ImageViewer = ({
     setIsDragging(false);
   }, []);
 
-  const zoomIn = () => {
-    setScale(prev => Math.min(5, prev + 0.2));
-  };
-
-  const zoomOut = () => {
-    setScale(prev => Math.max(0.1, prev - 0.2));
-  };
-
+  const zoomIn = () => setScale(prev => Math.min(5, prev + 0.2));
+  const zoomOut = () => setScale(prev => Math.max(0.1, prev - 0.2));
   const resetView = () => {
     setScale(1);
     setPosition({ x: 0, y: 0 });
@@ -97,14 +90,15 @@ const ImageViewer = ({
 
   const currentImg = images[currentIndex];
   const targetFolder = folderKey === 'ai_input' ? 'ai_output' : 'metashape_ai_output';
-  const hasDefects = folderKey === 'ai_input' ? globalImages.ai_output.includes(currentImg) : globalImages.metashape_ai_output.includes(currentImg);
+  const hasDefects = folderKey === 'ai_input' 
+    ? globalImages.ai_output.includes(currentImg) 
+    : globalImages.metashape_ai_output.includes(currentImg);
   
   const targetKey = `${projectId}_${showDefects ? targetFolder : folderKey}_${currentImg}`;
   const imageSrc = objectUrls[targetKey];
 
   const loadOrProcess = async (forceProcess = false) => {
      if (!forceProcess && hasDefects) return; 
-     onClose();
      try {
          await startSingleProcess(currentImg);
      } catch (e) {}
@@ -124,32 +118,15 @@ const ImageViewer = ({
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
     >
-      <div className="image-viewer__topbar" onClick={e => e.stopPropagation()}>
-         <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-            <span style={{ color: '#fff', fontSize: '14px' }}>{currentImg} ({currentIndex + 1} / {images.length})</span>
-         </div>
-         <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-            <label className="toggle-switch" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#fff', fontSize: '14px' }}>
-                <input type="checkbox" checked={showDefects} onChange={(e) => setShowDefects(e.target.checked)} style={{ display: 'none' }} />
-                <div style={{ width: '36px', height: '20px', background: showDefects ? '#E02600' : '#3f3f46', borderRadius: '10px', position: 'relative', transition: '0.3s' }}>
-                    <div style={{ width: '16px', height: '16px', background: '#fff', borderRadius: '50%', position: 'absolute', top: '2px', left: showDefects ? '18px' : '2px', transition: '0.3s' }}></div>
-                </div>
-                <span>С дефектами</span>
-            </label>
-            {showDefects && (
-                <button onClick={() => loadOrProcess(true)} className="image-viewer__btn process-btn" title="Обработать заново">
-                    <RefreshCw size={16} />
-                    <span>Переделать</span>
-                </button>
-            )}
-         </div>
-      </div>
-
       {currentIndex > 0 && (
-          <button className="nav-arrow nav-arrow--left" onClick={(e) => { e.stopPropagation(); onNavigate(-1); }}><ChevronLeft size={32}/></button>
+          <button className="nav-arrow nav-arrow--left" onClick={(e) => { e.stopPropagation(); onNavigate(-1); }}>
+              <ChevronLeft size={24} />
+          </button>
       )}
       {currentIndex < images.length - 1 && (
-          <button className="nav-arrow nav-arrow--right" onClick={(e) => { e.stopPropagation(); onNavigate(1); }}><ChevronRight size={32}/></button>
+          <button className="nav-arrow nav-arrow--right" onClick={(e) => { e.stopPropagation(); onNavigate(1); }}>
+              <ChevronRight size={24} />
+          </button>
       )}
 
       <div className="image-viewer__container" ref={containerRef} onClick={e => e.stopPropagation()}>
@@ -159,6 +136,7 @@ const ImageViewer = ({
               src={imageSrc}
               alt="Просмотр"
               className="image-viewer__img"
+              draggable={false}
               style={{
                 transform: `scale(${scale}) translate(${position.x}px, ${position.y}px)`,
                 cursor: scale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default'
@@ -166,17 +144,36 @@ const ImageViewer = ({
               onMouseDown={handleMouseDown}
             />
         ) : (
-            <div className="image-viewer__loader"><p style={{ color: '#fff' }}>Загрузка...</p></div>
+            <div className="image-viewer__loader">
+                <div className="premium-loader premium-loader--large"></div>
+            </div>
         )}
         
-        <div className="image-viewer__zoom-info">
-          {Math.round(scale * 100)}%
+        <div className="image-viewer__controls">
+          <div className="segmented-control" style={{ marginRight: '16px', background: '#09090b', borderColor: '#27272a' }}>
+             <button className={`segmented-btn ${!showDefects ? 'active' : ''}`} onClick={() => setShowDefects(false)}>Исходник</button>
+             <button className={`segmented-btn ${showDefects ? 'active' : ''}`} onClick={() => setShowDefects(true)}>Результат</button>
+          </div>
+          
+          <button className="image-viewer__btn" onClick={zoomOut} title="Уменьшить">
+            <ZoomOut size={18} />
+          </button>
+          <button className="image-viewer__btn" onClick={resetView} title="Сбросить">
+            <RefreshCcw size={18} />
+          </button>
+          <button className="image-viewer__btn" onClick={zoomIn} title="Увеличить">
+            <ZoomIn size={18} />
+          </button>
+          
+          <div className="image-viewer__divider"></div>
+          
+          <button className="image-viewer__btn image-viewer__btn--close" onClick={onClose} title="Закрыть">
+            <X size={18} />
+          </button>
         </div>
-
-        <div className="image-viewer__controls" onClick={e => e.stopPropagation()}>
-          <button className="image-viewer__btn" onClick={zoomOut} title="Уменьшить">−</button>
-          <button className="image-viewer__btn" onClick={resetView} title="Сбросить">↺</button>
-          <button className="image-viewer__btn" onClick={zoomIn} title="Увеличить">+</button>
+        
+        <div className="image-viewer__counter">
+            {currentIndex + 1} / {images.length}
         </div>
       </div>
     </div>

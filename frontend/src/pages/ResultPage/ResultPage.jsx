@@ -3,18 +3,20 @@ import './ResultPage.css';
 import ImageViewer from '../../components/imageViewer/imageViewer';
 import { Box, Image as ImageIcon, CheckCircle2, Upload, BoxSelect, Plus, X, Trash2, Sparkles } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
 
 export default function ResultPage() {
   const { logout, user } = useAuth();
   const navigate = useNavigate();
+  const { projectId: urlProjectId } = useParams();
   
   const [projects, setProjects] = useState([]);
   const [activeProject, setActiveProject] = useState(null);
   const [images, setImages] = useState({ projectId: null, ai_input: [], ai_output: [], metashape_input: [], metashape_output: [] });
   const [activeGroup, setActiveGroup] = useState('ai');
+  const [showAIOutput, setShowAIOutput] = useState(false);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [fullscreenImageIndex, setFullscreenImageIndex] = useState(null);
@@ -49,11 +51,26 @@ export default function ResultPage() {
       const res = await authFetch(`${API_BASE_URL}/api/projects/`);
       const data = await res.json();
       setProjects(data);
-      if (data.length > 0 && !activeProject) setActiveProject(data[0]);
+      if (data.length > 0 && !urlProjectId) {
+          navigate(`/result/${data[0].id}`, { replace: true });
+      }
     } catch (e) { console.error(e); }
   };
 
   useEffect(() => { fetchProjects(); }, []);
+
+  useEffect(() => {
+      if (projects.length > 0) {
+          if (urlProjectId) {
+              const proj = projects.find(p => p.id === parseInt(urlProjectId));
+              if (proj && proj.id !== activeProject?.id) {
+                  setActiveProject(proj);
+              }
+          } else if (!activeProject) {
+              navigate(`/result/${projects[0].id}`, { replace: true });
+          }
+      }
+  }, [urlProjectId, projects]);
 
   const fetchImages = async (projectId) => {
     try {
@@ -137,7 +154,7 @@ export default function ResultPage() {
       });
       const proj = await res.json();
       setProjects([proj, ...projects]);
-      setActiveProject(proj);
+      navigate(`/result/${proj.id}`);
       setIsCreatingProject(false);
       setNewProjectName('');
     } catch (e) { console.error(e); }
@@ -148,8 +165,16 @@ export default function ResultPage() {
     if (!window.confirm('Точно удалить проект?')) return;
     try {
       await authFetch(`${API_BASE_URL}/api/projects/${id}`, { method: 'DELETE' });
-      setProjects(projects.filter(p => p.id !== id));
-      if (activeProject?.id === id) setActiveProject(null);
+      const newProjects = projects.filter(p => p.id !== id);
+      setProjects(newProjects);
+      if (activeProject?.id === id) {
+          if (newProjects.length > 0) {
+              navigate(`/result/${newProjects[0].id}`);
+          } else {
+              setActiveProject(null);
+              navigate(`/result`);
+          }
+      }
     } catch (e) { console.error(e); }
   };
 
@@ -186,17 +211,6 @@ export default function ResultPage() {
       await authFetch(`${API_BASE_URL}/api/projects/${activeProject.id}/images/${group}/${filename}`, { method: 'DELETE' });
       fetchImages(activeProject.id);
     } catch (e) {}
-  };
-
-  const handleProcessSingle = async (filename, group) => {
-    try {
-      await authFetch(`${API_BASE_URL}/api/projects/${activeProject.id}/images/${group}/${filename}/process_ai`, { method: 'POST' });
-      fetchImages(activeProject.id);
-    } catch (e) {}
-  };
-
-  const getImageUrl = (group, filename) => {
-    // With HttpOnly cookies, we can just use the URL directly in <img src>
   };
 
   const [objectUrls, setObjectUrls] = useState({});
@@ -238,24 +252,8 @@ export default function ResultPage() {
     fetchMissing();
   }, [images, activeProject?.id, objectUrls]);
 
-  const handleForceRefetch = async (img, folder) => {
-      try {
-          const res = await authFetch(`${API_BASE_URL}/api/projects/${activeProject.id}/images/${folder}/${img}`);
-          if (res.ok) {
-              const blob = await res.blob();
-              const url = URL.createObjectURL(blob);
-              setObjectUrls(prev => ({ ...prev, [`${activeProject.id}_${folder}_${img}`]: url }));
-          }
-      } catch (e) {}
-  };
-
-  const currentGroupImages = activeGroup === 'ai' 
-      ? images.ai_input 
-      : (activeGroup === 'metashape' ? images.metashape_input : images.metashape_project);
-      
-  const folderKey = activeGroup === 'ai' 
-      ? 'ai_input' 
-      : (activeGroup === 'metashape' ? 'metashape_input' : 'metashape_project');
+  const folderKey = activeGroup === 'ai' ? 'ai_input' : (activeGroup === 'metashape' ? 'metashape_input' : 'metashape_project');
+  const currentGroupImages = activeGroup === 'ai' ? images.ai_input : (activeGroup === 'metashape' ? images.metashape_input : images.metashape_project);
 
   const isImageProcessing = (img) => {
       if (processingImages.has(img)) return true;
@@ -275,6 +273,15 @@ export default function ResultPage() {
               return next;
           });
       }
+  };
+
+  const [isClosingModal, setIsClosingModal] = useState(false);
+  const handleCloseModal = () => {
+      setIsClosingModal(true);
+      setTimeout(() => {
+          setFullscreenImageIndex(null);
+          setIsClosingModal(false);
+      }, 300);
   };
 
   return (
@@ -301,7 +308,7 @@ export default function ResultPage() {
 
         <div className="projects-list">
           {projects.map(project => (
-            <div key={project.id} className={`project-card ${activeProject?.id === project.id ? 'active' : ''}`} onClick={() => setActiveProject(project)}>
+            <div key={project.id} className={`project-card ${activeProject?.id === project.id ? 'active' : ''}`} onClick={() => navigate(`/result/${project.id}`)}>
               <div className="project-header">
                 <h3>{project.name}</h3>
                 <button className="delete-btn" onClick={(e) => handleDeleteProject(project.id, e)}><Trash2 size={14}/></button>
@@ -352,27 +359,6 @@ export default function ResultPage() {
 
         <div className="content-body">
             <div className="gallery-panel">
-                <div className="gallery-header-status" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', alignItems: 'center' }}>
-                    <div className="status-banners" style={{ flex: 1 }}>
-                        {projectStatus.ai === 'processing' && activeGroup === 'ai' && (
-                            <div style={{ display: 'inline-flex', gap: '8px', alignItems: 'center', background: 'rgba(255, 255, 255, 0.1)', padding: '8px 16px', borderRadius: '12px', fontSize: '13px' }}>
-                                <Sparkles className="rotating" size={16} /> Идет пакетная обработка нейросетью...
-                            </div>
-                        )}
-                        {projectStatus.metashape === 'processing' && activeGroup === 'metashape' && (
-                            <div style={{ display: 'inline-flex', gap: '8px', alignItems: 'center', background: 'rgba(255, 255, 255, 0.1)', padding: '8px 16px', borderRadius: '12px', fontSize: '13px' }}>
-                                <BoxSelect className="rotating" size={16} /> Сборка фотограмметрической модели...
-                            </div>
-                        )}
-                    </div>
-                    <div>
-                        {activeGroup === 'metashape' && projectStatus.metashape !== 'processing' && currentGroupImages.length > 0 && (
-                            <button className="process-btn" onClick={() => handleProcess('metashape')} disabled={isUploading} style={{ background: 'rgba(255, 255, 255, 0.1) !important', color: '#fff !important', border: '1px solid rgba(255, 255, 255, 0.2)' }}>
-                                <CheckCircle2 size={16} /> Собрать модель
-                            </button>
-                        )}
-                    </div>
-                </div>
 
                 <div className="gallery-grid">
                 {currentGroupImages.length > 0 ? (
@@ -380,12 +366,12 @@ export default function ResultPage() {
                         const url = objectUrls[`${activeProject.id}_${folderKey}_${img}`];
                         const isProc = isImageProcessing(img);
                         return (
-                        <div key={i} className={`gallery-thumbnail ${isProc ? 'processing' : ''}`} onClick={() => !isProc && setFullscreenImageIndex(i)} style={{ position: 'relative' }}>
+                        <div key={i} className={`gallery-thumbnail ${isProc ? 'processing' : ''}`} onClick={() => setFullscreenImageIndex(i)} style={{ position: 'relative' }}>
                             {url ? <img src={url} alt={`Снимок ${i+1}`} loading="lazy" style={{ opacity: isProc ? 0.5 : 1, transition: '0.3s' }} /> : <div className="loading-placeholder">Загрузка...</div>}
                             
                             {isProc && (
-                                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.5)', zIndex: 10 }}>
-                                    <Sparkles className="rotating" size={32} style={{ color: '#fff' }} />
+                                <div className="thumbnail-processing-overlay">
+                                    <div className="premium-loader" style={{ width: '28px', height: '28px', borderWidth: '2px' }}></div>
                                 </div>
                             )}
 
@@ -410,24 +396,19 @@ export default function ResultPage() {
       </div>
       
       {fullscreenImageIndex !== null && (
-        <div className="fullscreen-modal" onClick={() => setFullscreenImageIndex(null)}>
-            <div className="fullscreen-close" onClick={() => setFullscreenImageIndex(null)}><X size={24}/></div>
-            <div className="fullscreen-content" onClick={e => e.stopPropagation()}>
+        <div className={`fullscreen-modal ${isClosingModal ? 'closing' : ''}`} onClick={handleCloseModal}>
+            <div className={`fullscreen-content ${isClosingModal ? 'closing' : ''}`} onClick={e => e.stopPropagation()}>
                 <ImageViewer 
                     globalImages={images}
                     images={currentGroupImages}
                     currentIndex={fullscreenImageIndex}
                     onNavigate={(dir) => {
                         let next = fullscreenImageIndex + dir;
-                        while (next >= 0 && next < currentGroupImages.length) {
-                            if (!isImageProcessing(currentGroupImages[next])) {
-                                setFullscreenImageIndex(next);
-                                return;
-                            }
-                            next += dir;
+                        if (next < currentGroupImages.length) {
+                          setFullscreenImageIndex(next);
                         }
                     }}
-                    onClose={() => setFullscreenImageIndex(null)}
+                    onClose={handleCloseModal}
                     folderKey={folderKey}
                     projectId={activeProject.id}
                     objectUrls={objectUrls}

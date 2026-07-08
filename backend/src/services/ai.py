@@ -195,14 +195,14 @@ def process_image(image_path: str) -> str:
     new_image_path = root + "_yolo" + ext
     cv2.imwrite(new_image_path, image)
 
-    text_file_path = root + "_data.txt"
-    with open(text_file_path, "w", encoding="utf-8") as f:
-        for class_name, details in grouped_objects.items():
-            f.write(f"{class_name}:\n")
-            for detail in details:
-                f.write(
-                    f"Coordinates: ({detail[0]}, {detail[1]}, {detail[2]}, {detail[3]})\n"
-                )
+    # text_file_path = root + "_data.txt"
+    # with open(text_file_path, "w", encoding="utf-8") as f:
+    #     for class_name, details in grouped_objects.items():
+    #         f.write(f"{class_name}:\n")
+    #         for detail in details:
+    #             f.write(
+    #                 f"Coordinates: ({detail[0]}, {detail[1]}, {detail[2]}, {detail[3]})\n"
+    #             )
 
     return new_image_path
 
