@@ -230,23 +230,30 @@ def get_project_status(project_id: int, db: Session = Depends(get_db), current_u
     }
 
 @router.get("/{project_id}/status/stream")
-async def get_project_status_stream(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    project = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-        
+async def get_project_status_stream(project_id: int, current_user: User = Depends(get_current_user)):
     async def event_generator():
         last_state = None
         while True:
-            db.refresh(project)
-            current_state = {
-                "ai": project.ai_status,
-                "metashape": project.metashape_status,
-                "error": project.error_message
-            }
-            if current_state != last_state:
-                yield f"data: {json.dumps(current_state)}\n\n"
-                last_state = current_state
+            db = SessionLocal()
+            try:
+                project = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+                if not project:
+                    yield f"data: {json.dumps({'error': 'Project deleted'})}\n\n"
+                    break
+                
+                current_state = {
+                    "ai": project.ai_status,
+                    "metashape": project.metashape_status,
+                    "error": project.error_message
+                }
+                if current_state != last_state:
+                    yield f"data: {json.dumps(current_state)}\n\n"
+                    last_state = current_state
+            except Exception:
+                pass
+            finally:
+                db.close()
+                
             await asyncio.sleep(1)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")

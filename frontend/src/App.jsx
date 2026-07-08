@@ -97,6 +97,14 @@ function AppContent() {
               </ProtectedRoute>
             } 
           />
+          <Route 
+            path="/result/:projectId" 
+            element={
+              <ProtectedRoute>
+                <ResultPage />
+              </ProtectedRoute>
+            } 
+          />
         </Routes>
       </main>
    </div>
