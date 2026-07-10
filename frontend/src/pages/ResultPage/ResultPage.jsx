@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './ResultPage.css';
 import ImageViewer from '../../components/imageViewer/imageViewer';
+import AdvancedModelViewer from '../../components/imageViewer/AdvancedModelViewer';
 import { Box, Image as ImageIcon, CheckCircle2, Upload, BoxSelect, Plus, X, Trash2, Sparkles } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate, useParams } from 'react-router-dom';
+
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
 
@@ -198,10 +200,16 @@ export default function ResultPage() {
   const handleProcess = async (group) => {
     if (!activeProject) return;
     setIsUploading(true);
+    // Optimistically clear the error and set status to processing so the UI updates IMMEDIATELY
+    setProjectStatus(prev => ({ ...prev, [group]: 'processing', error: null }));
+    
     try {
       await authFetch(`${API_BASE_URL}/api/projects/${activeProject.id}/process/${group}`, { method: 'POST' });
       fetchImages(activeProject.id);
-    } catch (e) { console.error(e); }
+    } catch (e) { 
+        console.error(e); 
+        setProjectStatus(prev => ({ ...prev, [group]: 'error', error: e.message }));
+    }
     setIsUploading(false);
   };
 
@@ -253,7 +261,7 @@ export default function ResultPage() {
   }, [images, activeProject?.id, objectUrls]);
 
   const folderKey = activeGroup === 'ai' ? 'ai_input' : (activeGroup === 'metashape' ? 'metashape_input' : 'metashape_project');
-  const currentGroupImages = activeGroup === 'ai' ? images.ai_input : (activeGroup === 'metashape' ? images.metashape_input : images.metashape_project);
+  const currentGroupImages = activeGroup === 'ai' ? images.ai_input : (activeGroup === 'metashape' ? images.metashape_input : (images.metashape_project || []).filter(img => img.toLowerCase().endsWith('.glb') || img.toLowerCase().endsWith('.gltf')));
 
   const isImageProcessing = (img) => {
       if (processingImages.has(img)) return true;
@@ -289,6 +297,14 @@ export default function ResultPage() {
       {errorMsg && (
         <div className="app-status-panel">
             <span className="app-status app-status--error">{errorMsg}</span>
+        </div>
+      )}
+      {projectStatus.error && (
+        <div className="app-status-panel">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', gap: '15px' }}>
+                <span className="app-status app-status--error" style={{ margin: 0, width: '100%' }}>{projectStatus.error}</span>
+                <button onClick={() => setProjectStatus(prev => ({ ...prev, error: null }))} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: '0 5px' }} title="Скрыть ошибку"><X size={16} /></button>
+            </div>
         </div>
       )}
       <div className="projects-sidebar">
@@ -341,8 +357,21 @@ export default function ResultPage() {
         ) : (
         <>
         <header className="content-header">
-          <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
             <h1 className="content-title">{activeProject.name}</h1>
+            
+            {(activeGroup === 'metashape' || activeGroup === 'metashape_result') && projectStatus.metashape !== 'processing' && images?.metashape_input?.length > 0 && (
+                <button className="process-btn" onClick={() => handleProcess('metashape')} disabled={isUploading} style={{ background: 'rgba(255, 255, 255, 0.1)', color: '#fff', border: '1px solid rgba(255, 255, 255, 0.2)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}>
+                    <CheckCircle2 size={14} /> Собрать 3D-модель
+                </button>
+            )}
+            
+            {projectStatus.metashape === 'processing' && (
+                <span style={{ fontSize: '13px', color: '#a0a0a0', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <div className="premium-loader" style={{ width: '14px', height: '14px', borderWidth: '2px' }}></div> 
+                    Идет сборка модели...
+                </span>
+            )}
           </div>
           <div className="tabs">
             <button className={`tab-btn ${activeGroup === 'ai' ? 'active' : ''}`} onClick={() => setActiveGroup('ai')}>
@@ -361,21 +390,44 @@ export default function ResultPage() {
             <div className="gallery-panel">
 
                 <div className="gallery-grid">
-                {currentGroupImages.length > 0 ? (
-                    currentGroupImages.map((img, i) => {
-                        const url = objectUrls[`${activeProject.id}_${folderKey}_${img}`];
-                        const isProc = isImageProcessing(img);
-                        return (
-                        <div key={i} className={`gallery-thumbnail ${isProc ? 'processing' : ''}`} onClick={() => setFullscreenImageIndex(i)} style={{ position: 'relative' }}>
-                            {url ? <img src={url} alt={`Снимок ${i+1}`} loading="lazy" style={{ opacity: isProc ? 0.5 : 1, transition: '0.3s' }} /> : <div className="loading-placeholder">Загрузка...</div>}
+                    {currentGroupImages.length > 0 ? (
+                        currentGroupImages.map((img, i) => {
+                            const url = objectUrls[`${activeProject.id}_${folderKey}_${img}`];
+                            const isProc = isImageProcessing(img);
+                            const is3DModel = img.toLowerCase().endsWith('.glb') || img.toLowerCase().endsWith('.gltf');
                             
-                            {isProc && (
-                                <div className="thumbnail-processing-overlay">
-                                    <div className="premium-loader" style={{ width: '28px', height: '28px', borderWidth: '2px' }}></div>
-                                </div>
-                            )}
+                            return (
+                            <div key={i} className={`gallery-thumbnail ${isProc ? 'processing' : ''}`} onClick={() => !isProc && !is3DModel && setFullscreenImageIndex(i)} style={{ position: 'relative', gridColumn: is3DModel ? '1 / -1' : 'auto', height: is3DModel ? '500px' : 'auto' }}>
+                                {url ? (
+                                    is3DModel ? (
+                                        <div style={{ width: '100%', height: '100%', position: 'relative', borderRadius: '12px', overflow: 'hidden' }} id={`model-container-${i}`}>
+                                            <AdvancedModelViewer 
+                                                src={url} 
+                                                rotationFix={true}
+                                            />
+                                            <button 
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setFullscreenImageIndex(i);
+                                                }}
+                                                style={{ position: 'absolute', top: '15px', right: '15px', background: 'rgba(0,0,0,0.6)', border: 'none', color: '#fff', padding: '8px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                                title="Открыть в режиме просмотра"
+                                            >
+                                                <BoxSelect size={20} />
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <img src={url} alt={`Снимок ${i+1}`} loading="lazy" style={{ opacity: isProc ? 0.5 : 1, transition: '0.3s' }} />
+                                    )
+                                ) : <div className="loading-placeholder">Загрузка...</div>}
+                                
+                                {isProc && (
+                                    <div className="thumbnail-processing-overlay">
+                                        <div className="premium-loader" style={{ width: '28px', height: '28px', borderWidth: '2px' }}></div>
+                                    </div>
+                                )}
 
-                            {!isProc && (
+                            {!isProc && !is3DModel && (
                                 <div className="thumbnail-actions" onClick={e => e.stopPropagation()}>
                                     <button className="action-btn delete" title="Удалить" onClick={(e) => { e.stopPropagation(); handleDeleteImage(img, folderKey); }}>
                                         <Trash2 size={16} />
@@ -386,7 +438,23 @@ export default function ResultPage() {
                         )
                     })
                 ) : (
-                    <div className="gallery-empty">В этой группе пока нет фотографий. Загрузите их через панель слева.</div>
+                    activeGroup === 'metashape_result' ? (
+                        <div className="gallery-empty" style={{ display: 'flex', flexDirection: 'column', gap: '15px', alignItems: 'center', padding: '60px 20px' }}>
+                            <Box size={48} opacity={0.3} />
+                            {projectStatus.metashape === 'processing' ? (
+                                <p>Модель находится в процессе сборки...</p>
+                            ) : (
+                                <>
+                                    <p>3D-модель еще не собрана.</p>
+                                    <button className="process-btn" onClick={() => { handleProcess('metashape'); }} disabled={isUploading || !images.metashape_input?.length} style={{ padding: '12px 24px', fontSize: '16px', background: 'var(--primary-color)', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <Sparkles size={20} /> Запустить генерацию 3D-модели
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="gallery-empty">В этой группе пока нет фотографий. Загрузите их через панель слева.</div>
+                    )
                 )}
                 </div>
             </div>

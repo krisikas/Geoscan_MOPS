@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, RefreshCw, ZoomIn, ZoomOut, RefreshCcw, X } from 'lucide-react';
 import './imageViewer.css';
+import AdvancedModelViewer from './AdvancedModelViewer';
 
 const ImageViewer = ({ 
   globalImages,
@@ -19,6 +20,7 @@ const ImageViewer = ({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   
   const [showDefects, setShowDefects] = useState(false);
+  const [modelRotation, setModelRotation] = useState(-90); // Metashape Z-up fix
   
   const imageRef = useRef(null);
   const containerRef = useRef(null);
@@ -89,23 +91,24 @@ const ImageViewer = ({
   }, [onNavigate, onClose]);
 
   const currentImg = images[currentIndex];
+  const is3DModel = currentImg ? (currentImg.toLowerCase().endsWith('.glb') || currentImg.toLowerCase().endsWith('.gltf')) : false;
   const targetFolder = folderKey === 'ai_input' ? 'ai_output' : 'metashape_ai_output';
   const hasDefects = folderKey === 'ai_input' 
     ? globalImages.ai_output.includes(currentImg) 
     : globalImages.metashape_ai_output.includes(currentImg);
   
-  const targetKey = `${projectId}_${showDefects ? targetFolder : folderKey}_${currentImg}`;
+  const targetKey = `${projectId}_${showDefects && !is3DModel ? targetFolder : folderKey}_${currentImg}`;
   const imageSrc = objectUrls[targetKey];
 
   const loadOrProcess = async (forceProcess = false) => {
-     if (!forceProcess && hasDefects) return; 
+     if (!forceProcess && (hasDefects || is3DModel)) return; 
      try {
          await startSingleProcess(currentImg);
      } catch (e) {}
   };
   
   useEffect(() => {
-     if (showDefects) loadOrProcess();
+     if (showDefects && !is3DModel) loadOrProcess();
   }, [showDefects, currentIndex]);
 
   if (!images || images.length === 0) return null;
@@ -113,10 +116,10 @@ const ImageViewer = ({
   return (
     <div 
       className="image-viewer"
-      onWheel={handleWheel}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
+      onWheel={is3DModel ? undefined : handleWheel}
+      onMouseMove={is3DModel ? undefined : handleMouseMove}
+      onMouseUp={is3DModel ? undefined : handleMouseUp}
+      onMouseLeave={is3DModel ? undefined : handleMouseUp}
     >
       {currentIndex > 0 && (
           <button className="nav-arrow nav-arrow--left" onClick={(e) => { e.stopPropagation(); onNavigate(-1); }}>
@@ -129,20 +132,27 @@ const ImageViewer = ({
           </button>
       )}
 
-      <div className="image-viewer__container" ref={containerRef} onClick={e => e.stopPropagation()}>
+      <div className="image-viewer__container" ref={containerRef} onClick={e => e.stopPropagation()} style={is3DModel ? { padding: 0 } : {}}>
         {imageSrc ? (
-            <img
-              ref={imageRef}
-              src={imageSrc}
-              alt="Просмотр"
-              className="image-viewer__img"
-              draggable={false}
-              style={{
-                transform: `scale(${scale}) translate(${position.x}px, ${position.y}px)`,
-                cursor: scale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default'
-              }}
-              onMouseDown={handleMouseDown}
-            />
+            is3DModel ? (
+                <AdvancedModelViewer 
+                    src={imageSrc} 
+                    rotationFix={modelRotation === -90 || modelRotation === 270}
+                />
+            ) : (
+                <img
+                  ref={imageRef}
+                  src={imageSrc}
+                  alt="Просмотр"
+                  className="image-viewer__img"
+                  draggable={false}
+                  style={{
+                    transform: `scale(${scale}) translate(${position.x}px, ${position.y}px)`,
+                    cursor: scale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default'
+                  }}
+                  onMouseDown={handleMouseDown}
+                />
+            )
         ) : (
             <div className="image-viewer__loader">
                 <div className="premium-loader premium-loader--large"></div>
@@ -150,22 +160,36 @@ const ImageViewer = ({
         )}
         
         <div className="image-viewer__controls">
-          <div className="segmented-control" style={{ marginRight: '16px', background: '#09090b', borderColor: '#27272a' }}>
-             <button className={`segmented-btn ${!showDefects ? 'active' : ''}`} onClick={() => setShowDefects(false)}>Исходник</button>
-             <button className={`segmented-btn ${showDefects ? 'active' : ''}`} onClick={() => setShowDefects(true)}>Результат</button>
-          </div>
+          {!is3DModel && (
+            <div className="segmented-control" style={{ marginRight: '16px', background: '#09090b', borderColor: '#27272a' }}>
+               <button className={`segmented-btn ${!showDefects ? 'active' : ''}`} onClick={() => setShowDefects(false)}>Исходник</button>
+               <button className={`segmented-btn ${showDefects ? 'active' : ''}`} onClick={() => setShowDefects(true)}>Результат</button>
+            </div>
+          )}
           
-          <button className="image-viewer__btn" onClick={zoomOut} title="Уменьшить">
-            <ZoomOut size={18} />
-          </button>
-          <button className="image-viewer__btn" onClick={resetView} title="Сбросить">
-            <RefreshCcw size={18} />
-          </button>
-          <button className="image-viewer__btn" onClick={zoomIn} title="Увеличить">
-            <ZoomIn size={18} />
-          </button>
-          
-          <div className="image-viewer__divider"></div>
+          {!is3DModel && (
+              <>
+                  <button className="image-viewer__btn" onClick={zoomOut} title="Уменьшить">
+                    <ZoomOut size={18} />
+                  </button>
+                  <button className="image-viewer__btn" onClick={resetView} title="Сбросить">
+                    <RefreshCcw size={18} />
+                  </button>
+                  <button className="image-viewer__btn" onClick={zoomIn} title="Увеличить">
+                    <ZoomIn size={18} />
+                  </button>
+                  <div className="image-viewer__divider"></div>
+              </>
+          )}
+
+          {is3DModel && (
+              <>
+                  <button className="image-viewer__btn" onClick={() => setModelRotation(prev => (prev + 90) % 360)} title="Повернуть ось (исправить кривое вращение)" style={{ gap: '8px', padding: '0 12px', width: 'auto' }}>
+                    <RefreshCw size={18} /> <span>Повернуть ось</span>
+                  </button>
+                  <div className="image-viewer__divider"></div>
+              </>
+          )}
           
           <button className="image-viewer__btn image-viewer__btn--close" onClick={onClose} title="Закрыть">
             <X size={18} />
