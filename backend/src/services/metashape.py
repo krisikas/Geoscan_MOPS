@@ -79,16 +79,13 @@ def process_metashape(
     chunk.buildModel()
     doc.save()
 
-    # Построение DEM
-    chunk.buildDem(source_data=Metashape.DepthMapsData)
-    doc.save()
-
-    # Построение ортомозаики
-    chunk.buildOrthomosaic(surface_data=Metashape.ElevationData)
-    doc.save()
-
-    # Экспорт ортомозаики
-    chunk.exportRaster(output_path, source_data=Metashape.OrthomosaicData)
+    # Экспорт 3D модели
+    model_output_path = os.path.join(os.path.dirname(output_path), "model.glb")
+    try:
+        chunk.exportModel(path=model_output_path)
+    except Exception as e:
+        print(f"Ошибка экспорта модели: {e}")
+        
     doc.save()
 
     # Закрываем Metashape (опционально, можно закомментировать для отладки)

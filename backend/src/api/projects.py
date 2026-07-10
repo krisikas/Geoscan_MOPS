@@ -39,7 +39,7 @@ def _ensure_project_dirs(project_id: int):
 def _get_images(folder: str) -> List[str]:
     if not os.path.exists(folder):
         return []
-    valid_exts = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp"}
+    valid_exts = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".glb", ".gltf"}
     files = []
     for f in os.listdir(folder):
         if os.path.splitext(f)[1].lower() in valid_exts:
@@ -301,14 +301,7 @@ def run_metashape_task(project_id: int, input_dir: str, output_dir: str):
         from src.services.metashape import process_metashape as run_metashape
         ortho_out = os.path.join(output_dir, "orthomosaic.png")
         proj_out = os.path.join(output_dir, "project.psx")
-        res = run_metashape(input_dir, ortho_out, proj_out)
-        
-        ai_out = os.path.join(output_dir, "orthomosaic_ai.png")
-        try:
-            from src.services.ai import process_ai_image
-            process_ai_image(res, ai_out)
-        except Exception:
-            shutil.copy2(res, ai_out)
+        run_metashape(input_dir, ortho_out, proj_out)
             
         set_project_status(project_id, db, {"metashape_status": "done"})
     except Exception as e:
