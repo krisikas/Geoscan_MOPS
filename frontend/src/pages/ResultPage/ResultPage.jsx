@@ -109,7 +109,12 @@ export default function ResultPage() {
   useEffect(() => {
     if (activeProject?.id) { 
       setImages({ projectId: null, ai_input: [], ai_output: [], metashape_input: [], metashape_project: [], metashape_ai_output: [] });
-      setObjectUrls({});
+      setObjectUrls(prev => {
+          Object.values(prev).forEach(url => {
+              try { URL.revokeObjectURL(url); } catch (e) {}
+          });
+          return {};
+      });
       setProjectStatus({ 
           ai: activeProject.ai_status || 'idle', 
           metashape: activeProject.metashape_status || 'idle', 
@@ -217,11 +222,58 @@ export default function ResultPage() {
     if (!window.confirm('Удалить это фото?')) return;
     try {
       await authFetch(`${API_BASE_URL}/api/projects/${activeProject.id}/images/${group}/${filename}`, { method: 'DELETE' });
+      
+      const key = `${activeProject.id}_${group}_${filename}`;
+      setObjectUrls(prev => {
+          if (prev[key]) {
+              try { URL.revokeObjectURL(prev[key]); } catch (e) {}
+              const next = { ...prev };
+              delete next[key];
+              return next;
+          }
+          return prev;
+      });
+
+      if (group === 'ai_input') {
+          const outKey = `${activeProject.id}_ai_output_${filename}`;
+          setObjectUrls(prev => {
+              if (prev[outKey]) {
+                  try { URL.revokeObjectURL(prev[outKey]); } catch (e) {}
+                  const next = { ...prev };
+                  delete next[outKey];
+                  return next;
+              }
+              return prev;
+          });
+      } else if (group === 'metashape_input') {
+          const outKey = `${activeProject.id}_metashape_ai_output_${filename}`;
+          setObjectUrls(prev => {
+              if (prev[outKey]) {
+                  try { URL.revokeObjectURL(prev[outKey]); } catch (e) {}
+                  const next = { ...prev };
+                  delete next[outKey];
+                  return next;
+              }
+              return prev;
+          });
+      }
+
       fetchImages(activeProject.id);
     } catch (e) {}
   };
 
   const [objectUrls, setObjectUrls] = useState({});
+
+  useEffect(() => {
+    return () => {
+      setObjectUrls(prev => {
+        Object.values(prev).forEach(url => {
+          try { URL.revokeObjectURL(url); } catch (e) {}
+        });
+        return {};
+      });
+    };
+  }, []);
 
   useEffect(() => {
     if (!activeProject?.id || images.projectId !== activeProject.id) return;

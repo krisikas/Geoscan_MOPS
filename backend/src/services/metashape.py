@@ -88,8 +88,22 @@ def process_metashape(
         
     doc.save()
 
-    # Закрываем Metashape (опционально, можно закомментировать для отладки)
-    # Metashape.app.quit()
+    # Построение ортомозаики по 3D модели
+    try:
+        chunk.buildOrthomosaic(surface_data=Metashape.ModelData)
+        doc.save()
+    except Exception as e:
+        print(f"Ошибка построения ортомозаики: {e}")
+
+    # Экспорт ортомозаики (ортофотоплана)
+    try:
+        if hasattr(chunk, "exportRaster"):
+            chunk.exportRaster(path=output_path, source_data=Metashape.OrthomosaicData)
+        else:
+            chunk.exportOrthomosaic(path=output_path)
+        doc.save()
+    except Exception as e:
+        print(f"Ошибка экспорта ортомозаики: {e}")
 
     return output_path
 
