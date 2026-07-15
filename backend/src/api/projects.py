@@ -109,7 +109,10 @@ async def upload_photos(
             if os.path.exists(d):
                 for f in os.listdir(d):
                     fp = os.path.join(d, f)
-                    if os.path.isfile(fp): os.remove(fp)
+                    if os.path.isdir(fp):
+                        shutil.rmtree(fp)
+                    else:
+                        os.remove(fp)
     
     saved = []
     for idx, upload in enumerate(files):
@@ -173,9 +176,39 @@ def delete_image(project_id: int, group: str, filename: str, db: Session = Depen
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
         
-    file_path = os.path.join(PROJECTS_ROOT, str(project.id), group, filename)
+    base_dir = os.path.join(PROJECTS_ROOT, str(project.id))
+    file_path = os.path.join(base_dir, group, filename)
     if os.path.exists(file_path):
-        os.remove(file_path)
+        if os.path.isdir(file_path):
+            shutil.rmtree(file_path)
+        else:
+            os.remove(file_path)
+            
+    # Delete matching AI output images and data coordinates txt files
+    base_name, _ = os.path.splitext(filename)
+    if group == "ai_input":
+        out_img = os.path.join(base_dir, "ai_output", filename)
+        if os.path.exists(out_img):
+            os.remove(out_img)
+        out_txt = os.path.join(base_dir, "ai_output", f"{base_name}_data.txt")
+        if os.path.exists(out_txt):
+            os.remove(out_txt)
+    elif group == "metashape_input":
+        out_img = os.path.join(base_dir, "metashape_ai_output", filename)
+        if os.path.exists(out_img):
+            os.remove(out_img)
+        out_txt = os.path.join(base_dir, "metashape_ai_output", f"{base_name}_data.txt")
+        if os.path.exists(out_txt):
+            os.remove(out_txt)
+    elif group == "ai_output":
+        out_txt = os.path.join(base_dir, "ai_output", f"{base_name}_data.txt")
+        if os.path.exists(out_txt):
+            os.remove(out_txt)
+    elif group == "metashape_ai_output":
+        out_txt = os.path.join(base_dir, "metashape_ai_output", f"{base_name}_data.txt")
+        if os.path.exists(out_txt):
+            os.remove(out_txt)
+            
     return {"status": "deleted"}
 
 @router.post("/{project_id}/images/{group}/{filename}/process_ai")
