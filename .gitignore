@@ -19,7 +19,9 @@ backend/tmp*/
 backend/data/
 backend/metashape/
 backend/runs/
+backend/.DS_Store
 
 frontend/node_modules/
 frontend/dist/
 frontend/.env.local
+frontend/.DS_Store

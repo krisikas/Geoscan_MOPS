@@ -10,17 +10,27 @@ export default function AuthPage() {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   
-  const { login } = useAuth();
+  const { login, register } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    // Для демо-версии логин и регистрация используют один метод login
-    await login(email, password);
-    setLoading(false);
-    navigate('/result');
+    setError(null);
+    try {
+      if (isLogin) {
+        await login(email, password);
+      } else {
+        await register(name, email, password);
+      }
+      navigate('/result');
+    } catch (err) {
+      setError(err.message || 'Ошибка авторизации');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -37,6 +47,8 @@ export default function AuthPage() {
             : 'Создайте аккаунт для работы с системой мониторинга GEOSCAN MOPS.'}
         </p>
         
+        {error && <div className="auth-error" style={{color: 'red', marginBottom: '15px'}}>{error}</div>}
+
         <form onSubmit={handleSubmit} className="auth-form">
           {!isLogin && (
             <div className="form-group">
@@ -82,7 +94,7 @@ export default function AuthPage() {
           <button 
             type="button" 
             className="auth-toggle-btn"
-            onClick={() => setIsLogin(!isLogin)}
+            onClick={() => { setIsLogin(!isLogin); setError(null); }}
           >
             {isLogin ? 'Зарегистрироваться' : 'Войти'}
           </button>

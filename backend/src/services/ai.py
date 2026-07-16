@@ -1,234 +1,143 @@
-from ultralytics import YOLO
 import cv2
 import numpy as np
 import os
-from typing import Dict, List, Optional, Tuple
+import torch
+from sahi import AutoDetectionModel
+from sahi.predict import get_sliced_prediction
+from typing import Optional
 
-# Модель загружается лениво при первом использовании
-_model: Optional[YOLO] = None
-
+_detection_model = None
 
 def _find_model_path() -> str:
-    """
-    Ищет файл модели YOLO в нескольких возможных местах.
-    Возвращает путь к модели или выбрасывает FileNotFoundError.
-    """
     env_path = os.getenv("YOLO_MODEL_PATH")
     if env_path and os.path.isfile(env_path):
         return env_path
-
     possible_paths = [
         "best.pt",
         os.path.join(os.path.dirname(__file__), "best.pt"),
         os.path.join(os.path.dirname(__file__), "..", "best.pt"),
     ]
-
     for path in possible_paths:
         abs_path = os.path.abspath(path)
         if os.path.isfile(abs_path):
             return abs_path
+    raise FileNotFoundError("Модель YOLO не найдена. Поместите файл best.pt в корень бекенда.")
 
-    raise FileNotFoundError(
-        "Модель YOLO не найдена. Поместите файл best.pt в папку backend/ "
-        "или укажите путь через переменную окружения YOLO_MODEL_PATH"
-    )
-
-
-def _get_model() -> YOLO:
-    """Ленивая загрузка модели YOLO."""
-    global _model
-    if _model is None:
+def _get_model():
+    global _detection_model
+    if _detection_model is None:
         model_path = _find_model_path()
-        _model = YOLO(model_path)
-    return _model
+        device = "mps" if torch.backends.mps.is_available() else ("cuda:0" if torch.cuda.is_available() else "cpu")
+        _detection_model = AutoDetectionModel.from_pretrained(
+            model_type='yolov8',
+            model_path=model_path,
+            confidence_threshold=0.0,
+            device=device
+        )
+    return _detection_model
 
+def _process_logic(image_path: str):
+    img = cv2.imread(image_path)
+    if img is None:
+        raise ValueError(f"Не удалось загрузить изображение: {image_path}")
 
-def _compute_iou(box: np.ndarray, boxes: np.ndarray) -> np.ndarray:
-    """Вычисляет IoU между боксом и массивом боксов."""
-    if boxes.size == 0:
-        return np.array([])
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-    x1 = np.maximum(box[0], boxes[:, 0])
-    y1 = np.maximum(box[1], boxes[:, 1])
-    x2 = np.minimum(box[2], boxes[:, 2])
-    y2 = np.minimum(box[3], boxes[:, 3])
+    max_size = 5080
+    h, w = img.shape[:2]
+    if max(h, w) > max_size:
+        scale = max_size / max(h, w)
+        img = cv2.resize(img, (int(w * scale), int(h * scale)))
 
-    inter_area = np.maximum(0, x2 - x1) * np.maximum(0, y2 - y1)
-    box_area = (box[2] - box[0]) * (box[3] - box[1])
-    boxes_area = (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
-    union_area = box_area + boxes_area - inter_area
-
-    return inter_area / np.maximum(union_area, 1e-6)
-
-
-def _split_image_into_tiles(
-    image: np.ndarray,
-    tile_size: int = 1200,
-    overlap: float = 0.165,
-) -> List[Tuple[np.ndarray, int, int]]:
-    """Разбивает изображение на пересекающиеся тайлы."""
-    h, w = image.shape[:2]
-    tiles: List[Tuple[np.ndarray, int, int]] = []
-    step = max(1, int(tile_size * (1 - overlap)))
-
-    for y in range(0, h, step):
-        for x in range(0, w, step):
-            x2 = min(x + tile_size, w)
-            y2 = min(y + tile_size, h)
-            tile = image[y:y2, x:x2]
-
-            if tile.shape[0] < tile_size // 4 or tile.shape[1] < tile_size // 4:
-                continue
-
-            tiles.append((tile, x, y))
-
-    return tiles
-
-
-def _merge_detections(
-    detections: List[Tuple[np.ndarray, np.ndarray, np.ndarray]],
-    iou_threshold: float = 0.5,
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Объединяет детекции с разных тайлов с применением NMS."""
-    if not detections:
-        return np.array([]), np.array([])
-
-    all_boxes: List[np.ndarray] = []
-    all_classes: List[np.ndarray] = []
-    all_scores: List[np.ndarray] = []
-
-    for boxes, classes, scores in detections:
-        if boxes.size == 0:
-            continue
-        all_boxes.append(boxes)
-        all_classes.append(classes)
-        all_scores.append(scores)
-
-    if not all_boxes:
-        return np.array([]), np.array([])
-
-    boxes = np.concatenate(all_boxes, axis=0)
-    classes = np.concatenate(all_classes, axis=0)
-    scores = np.concatenate(all_scores, axis=0)
-
-    final_boxes: List[np.ndarray] = []
-    final_classes: List[int] = []
-
-    for cls in np.unique(classes):
-        idxs = np.where(classes == cls)[0]
-        cls_boxes = boxes[idxs]
-        cls_scores = scores[idxs]
-        order = np.argsort(cls_scores)[::-1]
-
-        while order.size > 0:
-            current = order[0]
-            final_boxes.append(cls_boxes[current])
-            final_classes.append(int(cls))
-            if order.size == 1:
-                break
-            rest = order[1:]
-            ious = _compute_iou(cls_boxes[current], cls_boxes[rest])
-            rest = rest[ious <= iou_threshold]
-            order = rest
-
-    return np.array(final_boxes), np.array(final_classes)
-
-
-def _run_yolo_tiled(
-    image_path: str,
-    tile_size: int = 640,
-    overlap: float = 0.3,
-) -> Tuple[np.ndarray, Dict[int, str], np.ndarray, np.ndarray, Dict[str, List[List[int]]]]:
-    """Запускает YOLO на изображении, разбитом на тайлы."""
-    image = cv2.imread(image_path)
-    if image is None:
-        raise ValueError(f"Не удалось прочитать изображение: {image_path}")
+    lab = cv2.cvtColor(img, cv2.COLOR_RGB2LAB)
+    l, a, b = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=4, tileGridSize=(3, 3))
+    cl = clahe.apply(l)
+    limg = cv2.merge((cl, a, b))
+    img_contrast = cv2.cvtColor(limg, cv2.COLOR_LAB2RGB)
 
     model = _get_model()
-    tiles = _split_image_into_tiles(image, tile_size, overlap)
-    detections: List[Tuple[np.ndarray, np.ndarray, np.ndarray]] = []
-    names: Dict[int, str] = model.names if isinstance(model.names, dict) else {int(k): v for k, v in enumerate(model.names)}
 
-    for tile, offset_x, offset_y in tiles:
-        results = model(tile, verbose=False)[0]
-        boxes = results.boxes.xyxy.cpu().numpy()
-        classes = results.boxes.cls.cpu().numpy().astype(int)
-        scores = results.boxes.conf.cpu().numpy()
+    result = get_sliced_prediction(
+        img_contrast,
+        model,
+        slice_height=640,
+        slice_width=640,
+        overlap_height_ratio=0.2,
+        overlap_width_ratio=0.2
+    )
 
-        if boxes.size == 0:
+    class_thresholds = {
+        0: 0.003,
+        1: 1.03,
+        2: 0.8,
+        3: 0.00037
+    }
+
+    filtered_predictions = []
+    for obj in result.object_prediction_list:
+        cls_id = obj.category.id
+        conf = obj.score.value
+        if conf >= class_thresholds.get(cls_id, 0.25):
+            filtered_predictions.append(obj)
+
+    result.object_prediction_list = filtered_predictions
+
+    img_masks_only = img.copy()
+
+    colors = {
+        0: (255, 0, 0),
+        1: (255, 255, 0),
+        2: (0, 255, 0),
+        3: (0, 0, 255)
+    }
+
+    priority_order = [2, 3, 0, 1]
+    
+    valid_objects = [obj for obj in result.object_prediction_list if obj.mask is not None]
+    valid_objects.sort(key=lambda x: priority_order.index(x.category.id) if x.category.id in priority_order else 99)
+
+    global_painted_mask = np.zeros(img_contrast.shape[:2], dtype=bool)
+
+    grouped_objects = {}
+
+    for obj in valid_objects:
+        mask = np.array(obj.mask.bool_mask, dtype=bool)
+        valid_mask = mask & (~global_painted_mask)
+        
+        if not np.any(valid_mask):
             continue
+            
+        cls_id = obj.category.id
+        class_name = obj.category.name
+        color = colors.get(cls_id, (255, 255, 255))
+        
+        colored_mask = np.zeros_like(img_masks_only)
+        colored_mask[valid_mask] = color
+        img_masks_only[valid_mask] = cv2.addWeighted(img_masks_only[valid_mask], 0.5, colored_mask[valid_mask], 0.5, 0)
+        
+        global_painted_mask |= valid_mask
 
-        boxes[:, [0, 2]] += offset_x
-        boxes[:, [1, 3]] += offset_y
-        detections.append((boxes, classes, scores))
+        # Сбор данных для текстового файла
+        bbox = obj.bbox
+        grouped_objects.setdefault(class_name, []).append([
+            int(bbox.minx), int(bbox.miny), int(bbox.maxx), int(bbox.maxy)
+        ])
 
-    boxes, classes = _merge_detections(detections)
-
-    grouped_objects: Dict[str, List[List[int]]] = {}
-    for cls, box in zip(classes, boxes):
-        class_name = names.get(int(cls), str(cls))
-        grouped_objects.setdefault(class_name, []).append(box.astype(int).tolist())
-
-    return image, names, classes, boxes, grouped_objects
-
+    img_masks_only_bgr = cv2.cvtColor(img_masks_only, cv2.COLOR_RGB2BGR)
+    return img_masks_only_bgr, grouped_objects
 
 def process_image(image_path: str) -> str:
-    """Обрабатывает изображение и сохраняет результат рядом с исходником."""
-    image, class_names, classes, boxes, grouped_objects = _run_yolo_tiled(image_path)
-
-    for class_id, box in zip(classes, boxes):
-        class_name = class_names.get(int(class_id), str(class_id))
-        color = (4, 44, 252)
-        x1, y1, x2, y2 = box.astype(int)
-        cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
-        cv2.putText(
-            image,
-            class_name,
-            (x1, max(0, y1 - 10)),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.6,
-            color,
-            2,
-        )
-
+    result_img, _ = _process_logic(image_path)
     root, ext = os.path.splitext(image_path)
     new_image_path = root + "_yolo" + ext
-    cv2.imwrite(new_image_path, image)
-
-    text_file_path = root + "_data.txt"
-    with open(text_file_path, "w", encoding="utf-8") as f:
-        for class_name, details in grouped_objects.items():
-            f.write(f"{class_name}:\n")
-            for detail in details:
-                f.write(
-                    f"Coordinates: ({detail[0]}, {detail[1]}, {detail[2]}, {detail[3]})\n"
-                )
-
+    cv2.imwrite(new_image_path, result_img)
     return new_image_path
 
-
 def process_ai_image(input_path: str, output_path: str) -> str:
-    """Вариант для бекенда: сохраняет результат в точный путь."""
-    image, class_names, classes, boxes, grouped_objects = _run_yolo_tiled(input_path)
-
+    result_img, grouped_objects = _process_logic(input_path)
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-
-    for class_id, box in zip(classes, boxes):
-        class_name = class_names.get(int(class_id), str(class_id))
-        color = (4, 44, 252)
-        x1, y1, x2, y2 = box.astype(int)
-        cv2.rectangle(image, (x1, y1), (x2, y2), color, 4)
-        cv2.putText(
-            image,
-            class_name,
-            (x1, max(0, y1 - 10)),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.8,
-            color,
-            2,
-        )
-
-    cv2.imwrite(output_path, image)
+    cv2.imwrite(output_path, result_img)
 
     root, _ = os.path.splitext(output_path)
     text_file_path = root + "_data.txt"
@@ -241,8 +150,3 @@ def process_ai_image(input_path: str, output_path: str) -> str:
                 )
 
     return output_path
-
-
-def _run_yolo(image_path: str) -> tuple:
-    """Обратная совместимость с предыдущим API."""
-    return _run_yolo_tiled(image_path)
