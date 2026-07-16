@@ -14,6 +14,17 @@ from src.db.models import User, Project
 from src.api.auth import get_current_user
 from src.schemas.project import ProjectCreate, ProjectResponse
 from src.services.ai import process_ai_image
+import httpx
+from pydantic import BaseModel
+
+class Message(BaseModel):
+    role: str
+    text: str
+
+class PlanRequest(BaseModel):
+    history: List[Message]
+    new_prompt: str
+
 router = APIRouter()
 processing_locks: Set[Tuple[int, str, str]] = set()
 
@@ -364,3 +375,20 @@ def process_metashape(project_id: int, background_tasks: BackgroundTasks, db: Se
     set_project_status(project.id, db, {"metashape_status": "processing", "error_message": None})
     background_tasks.add_task(run_metashape_task, project.id, input_dir, output_dir)
     return {"status": "started"}
+
+@router.post("/{project_id}/plan")
+async def generate_plan(project_id: int, request: PlanRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    project = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+        
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post("http://localhost:8001/plan", json=request.model_dump(), timeout=120.0)
+            response.raise_for_status()
+            return response.json()
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=503, detail=f"AI Service is unreachable: {str(e)}")
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=f"AI Service error: {e.response.text}")
+
