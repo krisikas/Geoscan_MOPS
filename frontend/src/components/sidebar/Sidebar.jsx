@@ -64,10 +64,16 @@ export default function Sidebar() {
         </div>
 
         {user && (
-          <button className="logout-btn theme-toggle" onClick={handleLogout} style={{ marginTop: '8px', color: 'var(--color-error)' }}>
-            <LogOut size={18} />
-            <span>Выйти</span>
-          </button>
+          <div className="sidebar-user-card">
+            <div className="sidebar-user-info">
+              <span className="user-name">{user.name}</span>
+              <span className="user-email">{user.email}</span>
+            </div>
+            <button className="sidebar-logout-btn" onClick={handleLogout}>
+              <LogOut size={18} />
+              <span>Выйти</span>
+            </button>
+          </div>
         )}
       </div>
     </aside>

@@ -15,9 +15,9 @@ export default function BackgroundWaves() {
 
     const particles = [];
     const properties = {
-      particleCount: Math.floor((w * h) / 15000), // Dynamic count based on screen size
+      particleCount: Math.min(250, Math.floor((w * h) / 10000)),
       linkRadius: 180,
-      moveSpeed: 0.3, // Very slow and graceful
+      moveSpeed: 0.3,
     };
 
     let mouse = { x: null, y: null, radius: 250 };
@@ -29,30 +29,29 @@ export default function BackgroundWaves() {
     window.addEventListener('mousemove', handleMouseMove);
 
     class Particle {
-      constructor() {
+      constructor(id) {
+        this.id = id;
         this.x = Math.random() * w;
         this.y = Math.random() * h;
         this.vx = (Math.random() - 0.5) * properties.moveSpeed;
         this.vy = (Math.random() - 0.5) * properties.moveSpeed;
-        this.baseVx = this.vx;
-        this.baseVy = this.vy;
       }
       update() {
         if (this.x < 0 || this.x > w) this.vx *= -1;
         if (this.y < 0 || this.y > h) this.vy *= -1;
         
-        // Взаимодействие с курсором
         if (mouse.x != null && mouse.y != null) {
           let dx = mouse.x - this.x;
           let dy = mouse.y - this.y;
-          let dist = Math.sqrt(dx * dx + dy * dy);
+          let distSq = dx * dx + dy * dy;
+          let radiusSq = mouse.radius * mouse.radius;
           
-          if (dist < mouse.radius) {
+          if (distSq < radiusSq) {
+            let dist = Math.sqrt(distSq);
             let force = (mouse.radius - dist) / mouse.radius;
-            // Очень мягкое притяжение
             let forceX = (dx / dist) * force * 0.8;
             let forceY = (dy / dist) * force * 0.8;
-            this.x += forceX; // Притяжение (заставляет полигоны собираться вокруг курсора)
+            this.x += forceX;
             this.y += forceY;
           }
         }
@@ -63,64 +62,123 @@ export default function BackgroundWaves() {
     }
 
     for (let i = 0; i < properties.particleCount; i++) {
-      particles.push(new Particle());
+      particles.push(new Particle(i));
     }
 
-    const draw = () => {
+    const radiusSq = properties.linkRadius * properties.linkRadius;
+    const cellSize = properties.linkRadius;
+
+    let lastTime = 0;
+    const fpsInterval = 1000 / 30; // 30 FPS
+
+    const draw = (currentTime) => {
+      animationFrameId = requestAnimationFrame(draw);
+      
+      const elapsed = currentTime - lastTime;
+      if (elapsed < fpsInterval) return;
+      lastTime = currentTime - (elapsed % fpsInterval);
+
       ctx.clearRect(0, 0, w, h);
+
+      // Пространственная сетка (Spatial Hashing)
+      // Разбиваем экран на ячейки размером с linkRadius.
+      // Это позволяет не проверять каждую частицу с каждой (что давало 2.6 млн итераций),
+      // а проверять только соседние ячейки (снижает количество итераций до ~25 тысяч!)
+      const cols = Math.ceil(w / cellSize);
+      const rows = Math.ceil(h / cellSize);
+      const grid = new Array(cols * rows);
+      for (let i = 0; i < grid.length; i++) grid[i] = [];
 
       for (let i = 0; i < particles.length; i++) {
         particles[i].update();
+        let col = Math.floor(particles[i].x / cellSize);
+        let row = Math.floor(particles[i].y / cellSize);
+        if (col < 0) col = 0; if (col >= cols) col = cols - 1;
+        if (row < 0) row = 0; if (row >= rows) row = rows - 1;
+        grid[row * cols + col].push(particles[i]);
+      }
 
-        // Draw connections and triangles
-        for (let j = i + 1; j < particles.length; j++) {
-          let dx = particles[i].x - particles[j].x;
-          let dy = particles[i].y - particles[j].y;
-          let dist = Math.sqrt(dx * dx + dy * dy);
+      // Отрисовка
+      for (let i = 0; i < particles.length; i++) {
+        let pI = particles[i];
+        
+        let colI = Math.floor(pI.x / cellSize);
+        let rowI = Math.floor(pI.y / cellSize);
+        if (colI < 0) colI = 0; if (colI >= cols) colI = cols - 1;
+        if (rowI < 0) rowI = 0; if (rowI >= rows) rowI = rows - 1;
 
-          if (dist < properties.linkRadius) {
-            // Draw lines (wireframe)
-            const lineAlpha = 0.15 - (dist / properties.linkRadius) * 0.15;
-            ctx.beginPath();
-            ctx.strokeStyle = `rgba(255, 255, 255, ${lineAlpha})`;
-            ctx.lineWidth = 1;
-            ctx.moveTo(particles[i].x, particles[i].y);
-            ctx.lineTo(particles[j].x, particles[j].y);
-            ctx.stroke();
-
-            // Find third point for triangle (polygonal face)
-            for (let k = j + 1; k < particles.length; k++) {
-              let dx2 = particles[j].x - particles[k].x;
-              let dy2 = particles[j].y - particles[k].y;
-              let dist2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
-
-              let dx3 = particles[i].x - particles[k].x;
-              let dy3 = particles[i].y - particles[k].y;
-              let dist3 = Math.sqrt(dx3 * dx3 + dy3 * dy3);
-
-              if (dist2 < properties.linkRadius && dist3 < properties.linkRadius) {
-                // Determine opacity based on how close the three points are
-                let faceAlpha = 0.04 - (dist + dist2 + dist3) / (properties.linkRadius * 3) * 0.04;
-                if (faceAlpha > 0) {
-                  ctx.beginPath();
-                  // Using Geoscan Red for the polygonal fill
-                  ctx.fillStyle = `rgba(224, 38, 0, ${faceAlpha * 1.5})`;
-                  ctx.moveTo(particles[i].x, particles[i].y);
-                  ctx.lineTo(particles[j].x, particles[j].y);
-                  ctx.lineTo(particles[k].x, particles[k].y);
-                  ctx.closePath();
-                  ctx.fill();
+        // Собираем соседей только из текущей и 8 смежных ячеек
+        let neighbors = [];
+        for (let r = Math.max(0, rowI - 1); r <= Math.min(rows - 1, rowI + 1); r++) {
+          for (let c = Math.max(0, colI - 1); c <= Math.min(cols - 1, colI + 1); c++) {
+            let cell = grid[r * cols + c];
+            for (let n = 0; n < cell.length; n++) {
+              let pN = cell[n];
+              // Проверяем только частицы с бОльшим ID, чтобы избежать двойной отрисовки
+              if (pN.id > pI.id) {
+                let dx = pN.x - pI.x;
+                let dy = pN.y - pI.y;
+                if (dx * dx + dy * dy < radiusSq) {
+                  neighbors.push(pN);
                 }
               }
             }
           }
         }
-      }
 
-      animationFrameId = requestAnimationFrame(draw);
+        // Отрисовка связей с найденными соседями
+        for (let j = 0; j < neighbors.length; j++) {
+          let pJ = neighbors[j];
+          let dist = Math.sqrt(Math.pow(pJ.x - pI.x, 2) + Math.pow(pJ.y - pI.y, 2));
+
+          // Линии
+          const lineAlpha = 0.15 - (dist / properties.linkRadius) * 0.15;
+          if (lineAlpha > 0) {
+            ctx.beginPath();
+            ctx.globalAlpha = lineAlpha;
+            ctx.strokeStyle = "#ffffff";
+            ctx.lineWidth = 1;
+            ctx.moveTo(pI.x, pI.y);
+            ctx.lineTo(pJ.x, pJ.y);
+            ctx.stroke();
+          }
+
+          // Треугольники
+          // Ищем третью точку только среди уже найденных соседей
+          for (let k = 0; k < neighbors.length; k++) {
+            let pK = neighbors[k];
+            // Избегаем дубликатов (pJ.id < pK.id)
+            if (pK.id <= pJ.id) continue;
+            
+            let dx2 = pK.x - pJ.x;
+            let dy2 = pK.y - pJ.y;
+            let dist2Sq = dx2 * dx2 + dy2 * dy2;
+            
+            // Если pJ и pK близко друг к другу
+            if (dist2Sq < radiusSq) {
+              let dist2 = Math.sqrt(dist2Sq);
+              let dist3 = Math.sqrt(Math.pow(pK.x - pI.x, 2) + Math.pow(pK.y - pI.y, 2));
+              
+              let faceAlpha = 0.04 - (dist + dist2 + dist3) / (properties.linkRadius * 3) * 0.04;
+              if (faceAlpha > 0) {
+                ctx.beginPath();
+                ctx.globalAlpha = faceAlpha * 1.5;
+                ctx.fillStyle = "#e02600";
+                ctx.moveTo(pI.x, pI.y);
+                ctx.lineTo(pJ.x, pJ.y);
+                ctx.lineTo(pK.x, pK.y);
+                ctx.closePath();
+                ctx.fill();
+              }
+            }
+          }
+        }
+      }
+      
+      ctx.globalAlpha = 1.0;
     };
 
-    draw();
+    requestAnimationFrame(draw);
 
     const handleResize = () => {
       w = canvas.width = window.innerWidth;
