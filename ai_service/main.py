@@ -85,8 +85,17 @@ async def stream_flight(websocket: WebSocket):
         with open(prompt_path, 'r', encoding='utf-8') as f:
             sys_prompt = f.read()
         
+        # First message from client should be the route JSON string
+        route_str = await websocket.receive_text()
+        
+        full_prompt = (
+            f"{sys_prompt}\n\n"
+            f"[ПЛАНОВЫЙ МАРШРУТ ДЛЯ ИСПОЛНЕНИЯ]\n{route_str}\n[КОНЕЦ МАРШРУТА]\n\n"
+            f"Выполни полетную миссию строго по указанному маршруту."
+        )
+        
         process = await asyncio.create_subprocess_exec(
-            "agy", "--print", f"{sys_prompt}\nВыполни тестовую полетную миссию.",
+            "agy", "--print", full_prompt,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
