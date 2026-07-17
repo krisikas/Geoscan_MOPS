@@ -134,7 +134,7 @@ export default function MissionPage({ onStartFlight, loadingMessage, infoMessage
     setIsThinking(true);
     
     try {
-      const historyPayload = currentHistory.map(m => ({ role: m.role, text: m.text || (m.content?.text) || "" }));
+      const historyPayload = currentHistory.map(m => ({ role: m.role, text: m.content || "" }));
       
       const response = await fetch(`${API_BASE_URL}/api/projects/${activeProject.id}/plan`, {
         method: 'POST',
@@ -142,7 +142,8 @@ export default function MissionPage({ onStartFlight, loadingMessage, infoMessage
         credentials: 'include',
         body: JSON.stringify({
           history: historyPayload,
-          new_prompt: userMsg.content
+          new_prompt: userMsg.content,
+          current_route: activeProject.route_data || null
         })
       });
 

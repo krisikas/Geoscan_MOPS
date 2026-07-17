@@ -23,6 +23,7 @@ class Message(BaseModel):
 class PlanRequest(BaseModel):
     history: List[Message]
     new_prompt: str
+    current_route: Optional[Dict[str, Any]] = None
 
 @app.post("/plan")
 async def generate_plan(request: PlanRequest):
@@ -36,9 +37,11 @@ async def generate_plan(request: PlanRequest):
         system_instruction = "Отвечай строго в формате JSON: {\"text\": \"\", \"coordinates\": [], \"buildings\": []}"
 
     history_text = "\n".join([f"{msg.role}: {msg.text}" for msg in request.history])
+    current_route_text = json.dumps(request.current_route, ensure_ascii=False) if request.current_route else "Пусто"
 
     full_prompt = (
         f"{system_instruction}\n\n"
+        f"[ТЕКУЩИЙ МАРШРУТ ПРОЕКТА]\n{current_route_text}\n[КОНЕЦ МАРШРУТА]\n\n"
         f"[ИСТОРИЯ ОБСУЖДЕНИЯ]\n{history_text}\n[КОНЕЦ ИСТОРИИ]\n\n"
         f"Новый запрос пользователя: {request.new_prompt}"
     )
