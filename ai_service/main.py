@@ -27,9 +27,10 @@ class PlanRequest(BaseModel):
 @app.post("/plan")
 async def generate_plan(request: PlanRequest):
     import os
-    prompt_path = os.path.join(os.path.dirname(__file__), "prompts", "system_prompt.md")
+    PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
+    SYSTEM_PROMPT_PATH = os.path.join(PROMPTS_DIR, "planning_vla.md")
     try:
-        with open(prompt_path, "r", encoding="utf-8") as f:
+        with open(SYSTEM_PROMPT_PATH, "r", encoding="utf-8") as f:
             system_instruction = f.read()
     except FileNotFoundError:
         system_instruction = "Отвечай строго в формате JSON: {\"text\": \"\", \"coordinates\": [], \"buildings\": []}"
