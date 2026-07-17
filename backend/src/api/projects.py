@@ -442,6 +442,9 @@ async def stream_flight(websocket: WebSocket, project_id: int):
         from src.db.models import ChatMessage
 
         db = SessionLocal()
+        from src.db.models import Project
+        project = db.query(Project).filter(Project.id == project_id).first()
+        route_json = json.dumps(project.route_data if project and project.route_data else {}, ensure_ascii=False)
         
         separator = ChatMessage(project_id=project_id, role="system", content="[SEPARATOR] Начало полета")
         db.add(separator)
@@ -452,6 +455,7 @@ async def stream_flight(websocket: WebSocket, project_id: int):
         
         try:
             async with websockets.connect("ws://localhost:8001/stream_flight") as ai_ws:
+                await ai_ws.send(route_json)
                 while True:
                     try:
                         line = await ai_ws.recv()
