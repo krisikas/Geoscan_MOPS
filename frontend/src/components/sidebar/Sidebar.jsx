@@ -28,7 +28,7 @@ export default function Sidebar() {
         
         <nav className="nav-menu">
           <NavLink 
-            to="/start" 
+            to="/mission" 
             className={({ isActive }) => `nav-item ${isActive ? 'nav-item--active' : ''}`}
           >
             <span className="nav-icon">
@@ -38,7 +38,7 @@ export default function Sidebar() {
                 <line x1="12" y1="22.08" x2="12" y2="12"/>
               </svg>
             </span>
-            <span className="nav-label">Планирование</span>
+            <span className="nav-label">Управление</span>
           </NavLink>
           
           <NavLink 
@@ -58,10 +58,7 @@ export default function Sidebar() {
       </div>
 
       <div className="sidebar-bottom">
-        <div className="connection-status">
-          <span className="status-dot"></span>
-          <span className="status-text">БПЛА Подключен</span>
-        </div>
+
 
         {user && (
           <div className="sidebar-user-card">
