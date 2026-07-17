@@ -49,6 +49,27 @@ export default function RouteVisualizer({ coordinates = [], buildings = [], curr
   const hasRoute = points.length > 0;
   const visiblePoints = hasRoute ? points.slice(0, currentStep + 1) : [];
 
+  const baseSize = useMemo(() => {
+    if (points.length === 0) return 0.2;
+    const box = new THREE.Box3();
+    points.forEach(p => box.expandByPoint(p));
+    if (buildings && buildings.length > 0) {
+      buildings.forEach(b => {
+        if (b.base_points) {
+          b.base_points.forEach(bp => {
+            box.expandByPoint(new THREE.Vector3(bp.x, 0, -bp.y));
+            box.expandByPoint(new THREE.Vector3(bp.x, b.height || 0, -bp.y));
+          });
+        }
+      });
+    }
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const maxDim = Math.max(size.x, size.y, size.z, 0.1);
+    // 1.5% of max dimension, with a sensible minimum
+    return Math.max(maxDim * 0.015, 0.01);
+  }, [points, buildings]);
+
   return (
     <div style={{ width: '100%', height: '100%', background: '#050505', borderRadius: '24px', overflow: 'hidden' }}>
       <Canvas camera={{ position: [15, 15, 15], fov: 50 }}>
@@ -88,7 +109,7 @@ export default function RouteVisualizer({ coordinates = [], buildings = [], curr
             {visiblePoints.map((p, idx) => (
               <group key={`wp-group-${idx}`} position={p}>
                 <mesh>
-                  <sphereGeometry args={[0.2, 32, 32]} />
+                  <sphereGeometry args={[baseSize, 32, 32]} />
                   <meshStandardMaterial 
                     color={idx === 0 ? "#10b981" : (idx === points.length - 1 ? "#e02600" : "#ffffff")} 
                     emissive={idx === 0 ? "#10b981" : (idx === points.length - 1 ? "#e02600" : "#ffffff")}
@@ -96,9 +117,9 @@ export default function RouteVisualizer({ coordinates = [], buildings = [], curr
                   />
                 </mesh>
                 {/* Floating coordinate text */}
-                <Billboard position={[0, 0.8, 0]}>
+                <Billboard position={[0, baseSize * 4, 0]}>
                     <Text 
-                      fontSize={0.4} 
+                      fontSize={baseSize * 2} 
                       color="#aaaaaa"
                       anchorX="center"
                       anchorY="middle"
@@ -115,14 +136,14 @@ export default function RouteVisualizer({ coordinates = [], buildings = [], curr
                   position={points[currentStep]} 
                   rotation={[0, (coordinates[currentStep]?.yaw || 0) * Math.PI / 180, 0]}
                 >
-                    {/* Main Body */}
-                    <mesh position={[0, 0, 0]}>
-                        <boxGeometry args={[0.5, 0.1, 0.5]} />
-                        <meshStandardMaterial color="#e02600" emissive="#e02600" emissiveIntensity={1} />
+                    {/* Sleek Drone Ring */}
+                    <mesh rotation={[Math.PI/2, 0, 0]}>
+                        <torusGeometry args={[baseSize * 2.5, baseSize * 0.3, 16, 64]} />
+                        <meshStandardMaterial color="#e02600" emissive="#e02600" emissiveIntensity={1} transparent opacity={0.8} />
                     </mesh>
-                    {/* Front Nose (Arrow) */}
-                    <mesh position={[0.3, 0, 0]} rotation={[0, 0, -Math.PI/2]}>
-                        <coneGeometry args={[0.2, 0.4, 4]} />
+                    {/* Direction pointer (small cone) */}
+                    <mesh position={[baseSize * 3, 0, 0]} rotation={[0, 0, -Math.PI/2]}>
+                        <coneGeometry args={[baseSize, baseSize * 2, 16]} />
                         <meshStandardMaterial color="#ff4444" emissive="#ff4444" emissiveIntensity={2} />
                     </mesh>
                 </group>
