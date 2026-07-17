@@ -16,6 +16,7 @@ from src.schemas.project import ProjectCreate, ProjectResponse, ChatMessageRespo
 from src.services.ai import process_ai_image
 import httpx
 from pydantic import BaseModel
+from typing import List, Dict, Any, Set, Tuple, Optional
 
 class Message(BaseModel):
     role: str
@@ -24,6 +25,7 @@ class Message(BaseModel):
 class PlanRequest(BaseModel):
     history: List[Message]
     new_prompt: str
+    current_route: Optional[Dict[str, Any]] = None
 
 router = APIRouter()
 processing_locks: Set[Tuple[int, str, str]] = set()
