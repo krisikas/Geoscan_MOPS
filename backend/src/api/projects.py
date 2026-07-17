@@ -448,58 +448,47 @@ async def stream_flight(websocket: WebSocket, project_id: int):
         db.commit()
         await websocket.send_json({"role": "system", "content": "[SEPARATOR] Начало полета"})
 
-        prompt_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "..", "ai_service", "prompts", "mock_flight.md")
+        import websockets
         
-        with open(prompt_path, 'r', encoding='utf-8') as f:
-            sys_prompt = f.read()
-        
-        process = await asyncio.create_subprocess_exec(
-            "agy", "--print", f"{sys_prompt}\nВыполни тестовую полетную миссию.",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-
-        async def read_stream(stream):
-            while True:
-                line = await stream.readline()
-                if not line:
-                    break
-                line = line.decode('utf-8').strip()
-                if line:
+        try:
+            async with websockets.connect("ws://localhost:8001/stream_flight") as ai_ws:
+                while True:
                     try:
-                        data = json.loads(line)
-                        try:
-                            if data.get("type") == "PLANNER_RESPONSE" and data.get("tool_calls"):
-                                for tc in data.get("tool_calls", []):
-                                    content_str = f"[TOOL] {tc.get('name')}: {json.dumps(tc.get('arguments', {}), ensure_ascii=False)}"
-                                    msg = ChatMessage(project_id=project_id, role="system", content=content_str)
+                        line = await ai_ws.recv()
+                        if line:
+                            try:
+                                data = json.loads(line)
+                                try:
+                                    if data.get("type") == "PLANNER_RESPONSE" and data.get("tool_calls"):
+                                        for tc in data.get("tool_calls", []):
+                                            content_str = f"[TOOL] {tc.get('name')}: {json.dumps(tc.get('arguments', {}), ensure_ascii=False)}"
+                                            msg = ChatMessage(project_id=project_id, role="system", content=content_str)
+                                            db.add(msg)
+                                            await websocket.send_json({"role": "system", "content": content_str})
+                                    
+                                    content_text = data.get("content", "")
+                                    if content_text and isinstance(content_text, str) and content_text.strip():
+                                        msg = ChatMessage(project_id=project_id, role="ai", content=content_text.strip())
+                                        db.add(msg)
+                                        await websocket.send_json({"role": "ai", "content": content_text.strip()})
+                                    
+                                    db.commit()
+                                except Exception as e:
+                                    print("DB save error", e)
+                            except json.JSONDecodeError:
+                                # Save ai text to DB
+                                try:
+                                    msg = ChatMessage(project_id=project_id, role="ai", content=line)
                                     db.add(msg)
-                                    await websocket.send_json({"role": "system", "content": content_str})
-                            
-                            content_text = data.get("content", "")
-                            if content_text and isinstance(content_text, str) and content_text.strip():
-                                msg = ChatMessage(project_id=project_id, role="ai", content=content_text.strip())
-                                db.add(msg)
-                                await websocket.send_json({"role": "ai", "content": content_text.strip()})
-                            
-                            db.commit()
-                        except Exception as e:
-                            print("DB save error", e)
-                    except json.JSONDecodeError:
-                        # Save ai text to DB
-                        try:
-                            msg = ChatMessage(project_id=project_id, role="ai", content=line)
-                            db.add(msg)
-                            db.commit()
-                            await websocket.send_json({"role": "ai", "content": line})
-                        except Exception as e:
-                            print("DB save error", e)
-
-        await asyncio.gather(
-            read_stream(process.stdout),
-            read_stream(process.stderr)
-        )
-        await process.wait()
+                                    db.commit()
+                                    await websocket.send_json({"role": "ai", "content": line})
+                                except Exception as e:
+                                    print("DB save error", e)
+                    except websockets.exceptions.ConnectionClosed:
+                        break
+        except Exception as e:
+            print("Error connecting to ai_service websocket:", e)
+            await websocket.send_json({"role": "ai", "content": f"Ошибка соединения с AI Service: {str(e)}"})
         end_separator = ChatMessage(project_id=project_id, role="system", content="[SEPARATOR] Конец полета")
         db.add(end_separator)
         db.commit()
@@ -507,8 +496,6 @@ async def stream_flight(websocket: WebSocket, project_id: int):
         
     except WebSocketDisconnect:
         print("Client disconnected")
-        if 'process' in locals() and process.returncode is None:
-            process.terminate()
     finally:
         if 'db' in locals():
             db.close()

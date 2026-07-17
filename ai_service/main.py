@@ -2,7 +2,7 @@ import json
 import re
 import subprocess
 from typing import List, Dict, Any, Optional
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -72,5 +72,42 @@ async def generate_plan(request: PlanRequest):
             "coordinates": [],
             "buildings": []
         }
+
+@app.websocket("/stream_flight")
+async def stream_flight(websocket: WebSocket):
+    await websocket.accept()
+    import os
+    import asyncio
+    try:
+        PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
+        prompt_path = os.path.join(PROMPTS_DIR, "mock_flight.md")
+        
+        with open(prompt_path, 'r', encoding='utf-8') as f:
+            sys_prompt = f.read()
+        
+        process = await asyncio.create_subprocess_exec(
+            "agy", "--print", f"{sys_prompt}\nВыполни тестовую полетную миссию.",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+
+        async def read_stream(stream):
+            while True:
+                line = await stream.readline()
+                if not line:
+                    break
+                line = line.decode('utf-8').strip()
+                if line:
+                    await websocket.send_text(line)
+
+        await asyncio.gather(
+            read_stream(process.stdout),
+            read_stream(process.stderr)
+        )
+        await process.wait()
+    except WebSocketDisconnect:
+        print("Client disconnected from ai_service")
+        if 'process' in locals() and process.returncode is None:
+            process.terminate()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print("Stream flight error:", e)
