@@ -109,12 +109,23 @@ export default function RouteVisualizer({ coordinates = [], buildings = [], curr
               </group>
             ))}
 
-            {/* Glowing Drone Indicator for current step */}
+            {/* Directional Drone Indicator for current step */}
             {points[currentStep] && (
-                <mesh position={points[currentStep]} rotation={[Math.PI/2, 0, 0]}>
-                    <torusGeometry args={[0.6, 0.08, 16, 100]} />
-                    <meshStandardMaterial color="#e02600" emissive="#e02600" emissiveIntensity={2} transparent opacity={0.8} />
-                </mesh>
+                <group 
+                  position={points[currentStep]} 
+                  rotation={[0, (coordinates[currentStep]?.yaw || 0) * Math.PI / 180, 0]}
+                >
+                    {/* Main Body */}
+                    <mesh position={[0, 0, 0]}>
+                        <boxGeometry args={[0.5, 0.1, 0.5]} />
+                        <meshStandardMaterial color="#e02600" emissive="#e02600" emissiveIntensity={1} />
+                    </mesh>
+                    {/* Front Nose (Arrow) */}
+                    <mesh position={[0.3, 0, 0]} rotation={[0, 0, -Math.PI/2]}>
+                        <coneGeometry args={[0.2, 0.4, 4]} />
+                        <meshStandardMaterial color="#ff4444" emissive="#ff4444" emissiveIntensity={2} />
+                    </mesh>
+                </group>
             )}
           </group>
         )}

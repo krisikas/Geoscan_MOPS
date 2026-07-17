@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from src.db.database import Base
@@ -24,5 +24,19 @@ class Project(Base):
     ai_status = Column(String, default="idle")
     metashape_status = Column(String, default="idle")
     error_message = Column(String, nullable=True)
+    mission_status = Column(String, default="PLANNING")
+    route_data = Column(JSON, nullable=True)
 
     owner = relationship("User", back_populates="projects")
+    messages = relationship("ChatMessage", back_populates="project", cascade="all, delete")
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"))
+    role = Column(String, nullable=False) # 'user', 'ai', 'system'
+    content = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    project = relationship("Project", back_populates="messages")

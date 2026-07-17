@@ -6,7 +6,7 @@ import Loader from './components/loader/Loader'
 import BackgroundWaves from './components/backgroundWaves/BackgroundWaves'
 
 import MainPage from './pages/MainPage/MainPage'
-import StartPage from './pages/StartPage/StartPage'
+import MissionPage from './pages/MissionPage/MissionPage'
 import ResultPage from './pages/ResultPage/ResultPage'
 import AuthPage from './pages/AuthPage/AuthPage'
 
@@ -45,13 +45,6 @@ function AppContent() {
   const handleStartFlight = useCallback(async () => {
     setError(null)
     setInfoMessage(null)
-    setLoadingMessage('Стартуем полёт и сбор данных…')
-    
-    // Эмуляция старта полета (бэкенд пока не имеет реального управления БПЛА)
-    setTimeout(() => {
-      setLoadingMessage(null)
-      setInfoMessage('Пайплайн съёмки запущен и выполняется')
-    }, 2000)
   }, [logout, navigate])
 
   return (
@@ -77,10 +70,23 @@ function AppContent() {
           <Route path="/" element={<MainPage />} />
           <Route path="/auth" element={<AuthPage />} />
           <Route 
-            path="/start" 
+            path="/mission" 
             element={
               <ProtectedRoute>
-                <StartPage 
+                <MissionPage 
+                  onStartFlight={handleStartFlight} 
+                  loadingMessage={loadingMessage} 
+                  infoMessage={infoMessage} 
+                  error={error} 
+                />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/mission/:projectId" 
+            element={
+              <ProtectedRoute>
+                <MissionPage 
                   onStartFlight={handleStartFlight} 
                   loadingMessage={loadingMessage} 
                   infoMessage={infoMessage} 

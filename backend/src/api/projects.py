@@ -6,13 +6,13 @@ import uuid
 import asyncio
 import time
 from typing import List, Dict, Any, Set, Tuple
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from src.db.database import get_db, SessionLocal
 from src.db.models import User, Project
 from src.api.auth import get_current_user
-from src.schemas.project import ProjectCreate, ProjectResponse
+from src.schemas.project import ProjectCreate, ProjectResponse, ChatMessageResponse
 from src.services.ai import process_ai_image
 import httpx
 from pydantic import BaseModel
@@ -383,12 +383,130 @@ async def generate_plan(project_id: int, request: PlanRequest, db: Session = Dep
         raise HTTPException(status_code=404, detail="Project not found")
         
     try:
+        from src.db.models import ChatMessage
+        import json
+        
+        user_msg = ChatMessage(project_id=project_id, role="user", content=request.new_prompt)
+        db.add(user_msg)
+        db.commit()
+
         async with httpx.AsyncClient() as client:
             response = await client.post("http://localhost:8001/plan", json=request.model_dump(), timeout=120.0)
             response.raise_for_status()
-            return response.json()
+            ai_data = response.json()
+            
+            project.route_data = {"coordinates": ai_data.get("coordinates"), "buildings": ai_data.get("buildings")}
+            ai_msg = ChatMessage(
+                project_id=project_id, 
+                role="ai", 
+                content=ai_data.get("text", "")
+            )
+            db.add(ai_msg)
+            db.commit()
+            
+            return ai_data
     except httpx.RequestError as e:
         raise HTTPException(status_code=503, detail=f"AI Service is unreachable: {str(e)}")
     except httpx.HTTPStatusError as e:
         raise HTTPException(status_code=e.response.status_code, detail=f"AI Service error: {e.response.text}")
 
+@router.get("/{project_id}/chat", response_model=List[ChatMessageResponse])
+def get_chat_messages(project_id: int, limit: int = 50, offset: int = 0, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    project = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+        
+    from src.db.models import ChatMessage
+    messages = db.query(ChatMessage).filter(ChatMessage.project_id == project_id).order_by(ChatMessage.created_at.desc()).offset(offset).limit(limit).all()
+    # Return in chronological order
+    return messages[::-1]
+
+@router.post("/{project_id}/start_flight")
+def start_flight(project_id: int, request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # We will just update status here and route_data
+    # Actually, we need coordinates. Let's make a Pydantic model for it.
+    pass
+
+from fastapi import WebSocket, WebSocketDisconnect
+
+@router.websocket("/{project_id}/stream_flight")
+async def stream_flight(websocket: WebSocket, project_id: int):
+    await websocket.accept()
+    try:
+        import os
+        import json
+        import asyncio
+        from src.db.database import SessionLocal
+        from src.db.models import ChatMessage
+
+        db = SessionLocal()
+        
+        separator = ChatMessage(project_id=project_id, role="system", content="[SEPARATOR] Начало полета")
+        db.add(separator)
+        db.commit()
+        await websocket.send_json({"role": "system", "content": "[SEPARATOR] Начало полета"})
+
+        prompt_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "..", "ai_service", "prompts", "mock_flight.md")
+        
+        with open(prompt_path, 'r', encoding='utf-8') as f:
+            sys_prompt = f.read()
+        
+        process = await asyncio.create_subprocess_exec(
+            "agy", "--print", f"{sys_prompt}\nВыполни тестовую полетную миссию.",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+
+        async def read_stream(stream):
+            while True:
+                line = await stream.readline()
+                if not line:
+                    break
+                line = line.decode('utf-8').strip()
+                if line:
+                    try:
+                        data = json.loads(line)
+                        try:
+                            if data.get("type") == "PLANNER_RESPONSE" and data.get("tool_calls"):
+                                for tc in data.get("tool_calls", []):
+                                    content_str = f"[TOOL] {tc.get('name')}: {json.dumps(tc.get('arguments', {}), ensure_ascii=False)}"
+                                    msg = ChatMessage(project_id=project_id, role="system", content=content_str)
+                                    db.add(msg)
+                                    await websocket.send_json({"role": "system", "content": content_str})
+                            
+                            content_text = data.get("content", "")
+                            if content_text and isinstance(content_text, str) and content_text.strip():
+                                msg = ChatMessage(project_id=project_id, role="ai", content=content_text.strip())
+                                db.add(msg)
+                                await websocket.send_json({"role": "ai", "content": content_text.strip()})
+                            
+                            db.commit()
+                        except Exception as e:
+                            print("DB save error", e)
+                    except json.JSONDecodeError:
+                        # Save ai text to DB
+                        try:
+                            msg = ChatMessage(project_id=project_id, role="ai", content=line)
+                            db.add(msg)
+                            db.commit()
+                            await websocket.send_json({"role": "ai", "content": line})
+                        except Exception as e:
+                            print("DB save error", e)
+
+        await asyncio.gather(
+            read_stream(process.stdout),
+            read_stream(process.stderr)
+        )
+        await process.wait()
+        end_separator = ChatMessage(project_id=project_id, role="system", content="[SEPARATOR] Конец полета")
+        db.add(end_separator)
+        db.commit()
+        await websocket.send_json({"role": "system", "content": "[SEPARATOR] Конец полета"})
+        
+    except WebSocketDisconnect:
+        print("Client disconnected")
+        if 'process' in locals() and process.returncode is None:
+            process.terminate()
+    finally:
+        if 'db' in locals():
+            db.close()
