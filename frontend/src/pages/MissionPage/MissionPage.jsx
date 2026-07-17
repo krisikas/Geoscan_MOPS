@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import './StartPage.css';
+import './MissionPage.css';
 import { Send, Map, Crosshair, Play, Info, Plus } from 'lucide-react';
 import RouteVisualizer from './RouteVisualizer';
 import { useNavigate } from 'react-router-dom';
@@ -7,7 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
 
-export default function StartPage({ onStartFlight, loadingMessage, infoMessage, error }) {
+export default function MissionPage({ onStartFlight, loadingMessage, infoMessage, error }) {
   const { logout } = useAuth();
   const navigate = useNavigate();
   
@@ -22,9 +22,18 @@ export default function StartPage({ onStartFlight, loadingMessage, infoMessage, 
   const [coordinates, setCoordinates] = useState([]);
   const [buildings, setBuildings] = useState([]);
   const [isThinking, setIsThinking] = useState(false);
+  const [isExecuting, setIsExecuting] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
+  const wsRef = useRef(null);
+
+  // Clean up WS on unmount
+  useEffect(() => {
+      return () => {
+          if (wsRef.current) wsRef.current.close();
+      };
+  }, []);
 
   const handleInput = (e) => {
     setChatInput(e.target.value);
@@ -52,6 +61,36 @@ export default function StartPage({ onStartFlight, loadingMessage, infoMessage, 
     };
     fetchProjects();
   }, [logout, navigate]);
+
+  useEffect(() => {
+    if (activeProject) {
+        navigate(`/mission/${activeProject.id}`, { replace: true });
+    }
+  }, [activeProject, navigate]);
+
+  useEffect(() => {
+    if (!activeProject) return;
+    const loadChat = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/projects/${activeProject.id}/chat`, { credentials: 'include' });
+        if (res.ok) {
+          const chatData = await res.json();
+          if (chatData.length > 0) {
+            setMessages(chatData);
+            if (activeProject.route_data && activeProject.route_data.coordinates) {
+                setCoordinates(activeProject.route_data.coordinates);
+                setBuildings(activeProject.route_data.buildings || []);
+            }
+          } else {
+            setMessages([{ role: 'ai', text: 'Система ИИ инициализирована. Подключена к БПЛА по протоколу MCP. Какой объект планируем обследовать сегодня?' }]);
+          }
+        }
+      } catch (e) {
+        console.error("Failed to load chat", e);
+      }
+    };
+    loadChat();
+  }, [activeProject]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -86,7 +125,7 @@ export default function StartPage({ onStartFlight, loadingMessage, infoMessage, 
   const handleSendMessage = async () => {
     if (!chatInput.trim() || !activeProject || isThinking) return;
     
-    const userMsg = { role: 'user', text: chatInput };
+    const userMsg = { role: 'user', content: chatInput };
     const currentHistory = [...messages];
     const newMessages = [...currentHistory, userMsg];
     
@@ -95,7 +134,7 @@ export default function StartPage({ onStartFlight, loadingMessage, infoMessage, 
     setIsThinking(true);
     
     try {
-      const historyPayload = currentHistory.map(m => ({ role: m.role, text: m.text }));
+      const historyPayload = currentHistory.map(m => ({ role: m.role, text: m.text || (m.content?.text) || "" }));
       
       const response = await fetch(`${API_BASE_URL}/api/projects/${activeProject.id}/plan`, {
         method: 'POST',
@@ -103,7 +142,7 @@ export default function StartPage({ onStartFlight, loadingMessage, infoMessage, 
         credentials: 'include',
         body: JSON.stringify({
           history: historyPayload,
-          new_prompt: userMsg.text
+          new_prompt: userMsg.content
         })
       });
 
@@ -115,15 +154,23 @@ export default function StartPage({ onStartFlight, loadingMessage, infoMessage, 
       }
 
       const data = await response.json();
+      const aiMsg = { role: 'ai', content: data.text };
+      setMessages(prev => [...prev, aiMsg]);
       
-      setMessages(prev => [...prev, { 
-        role: 'ai', 
-        text: data.text || 'План обновлен.',
-      }]);
+      // Update local active project state with new route data
+      if (data.coordinates || data.buildings) {
+          setActiveProject(prev => ({
+              ...prev,
+              route_data: {
+                  coordinates: data.coordinates || prev.route_data?.coordinates,
+                  buildings: data.buildings || prev.route_data?.buildings
+              }
+          }));
+      }
       
       if (data.coordinates && data.coordinates.length > 0) {
-         setCoordinates(data.coordinates);
-         setCurrentStep(data.coordinates.length - 1);
+        setCoordinates(data.coordinates);
+        setCurrentStep(0);
       }
       if (data.buildings && data.buildings.length > 0) {
          setBuildings(data.buildings);
@@ -140,16 +187,57 @@ export default function StartPage({ onStartFlight, loadingMessage, infoMessage, 
     }
   };
 
+  const handleStartRealFlight = () => {
+    if (!activeProject || !hasRoute) return;
+    
+    // Call the parent's function for top-level loading state if desired
+    onStartFlight();
+
+    setIsExecuting(true);
+    setIsThinking(true);
+
+    const wsUrl = API_BASE_URL.replace(/^http/, 'ws') + `/api/projects/${activeProject.id}/stream_flight`;
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
+
+    ws.onmessage = (event) => {
+        setIsThinking(false);
+        try {
+            const data = JSON.parse(event.data);
+            setMessages(prev => [...prev, data]);
+        } catch (e) {
+            setMessages(prev => [...prev, { role: 'ai', content: event.data }]);
+        }
+    };
+
+    ws.onerror = () => {
+        setMessages(prev => [...prev, { role: 'ai', content: 'Ошибка WebSocket соединения.', isError: true }]);
+        setIsThinking(false);
+        setIsExecuting(false);
+    };
+
+    ws.onclose = () => {
+        setIsThinking(false);
+        setIsExecuting(false);
+    };
+  };
+
   const hasRoute = coordinates.length > 0;
 
   return (
-    <div className="start-page page-transition">
+    <div className="mission-page page-transition">
       <div className="start-grid">
         <div className="chat-container">
           <div className="chat-header--extended">
-            <div className="chat-header-top">
+            <div className="chat-header-top" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h3>Ассистент миссии</h3>
-                <span className="status-dot online"></span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', background: 'rgba(255,255,255,0.05)', padding: '4px 10px', borderRadius: '12px' }}>
+                    <span className={`status-dot ${isExecuting ? 'executing' : (hasRoute ? 'ready' : 'planning')}`} style={{ background: isExecuting ? 'var(--color-success)' : (hasRoute ? 'var(--color-accent)' : '#aaa') }}></span>
+                    <span style={{ color: isExecuting ? 'var(--color-success)' : (hasRoute ? 'var(--color-accent)' : '#aaa') }}>
+                        {/* {isExecuting ? 'Режим: Полет' : (hasRoute ? 'Режим: Ожидание' : 'Режим: Планирование')} */}
+                        {isExecuting ? 'Режим: Полет' : 'Режим: Планирование'}
+                    </span>
+                </div>
             </div>
             
             <div className="project-selector-row">
@@ -159,7 +247,7 @@ export default function StartPage({ onStartFlight, loadingMessage, infoMessage, 
                     onChange={(e) => {
                         const p = projects.find(x => x.id === parseInt(e.target.value));
                         setActiveProject(p);
-                        setMessages([{ role: 'ai', text: `Проект "${p.name}" выбран. Ожидаю указаний.` }]);
+                        setMessages([{ role: 'ai', content: `Проект "${p.name}" выбран. Ожидаю указаний.` }]);
                         setCoordinates([]);
                         setBuildings([]);
                         setCurrentStep(0);
@@ -195,13 +283,50 @@ export default function StartPage({ onStartFlight, loadingMessage, infoMessage, 
                 </div>
             )}
             
-            {messages.map((msg, idx) => (
-              <div key={idx} className={`chat-bubble-wrapper ${msg.role === 'user' ? 'right' : 'left'}`}>
-                <div className={`chat-bubble chat-bubble--${msg.role} ${msg.isError ? 'error-bubble' : ''}`}>
-                  {msg.text}
+            {messages.map((msg, idx) => {
+              if (msg.role === 'system' && msg.content === '[SEPARATOR] Начало полета') {
+                  return (
+                      <div key={idx} style={{ display: 'flex', alignItems: 'center', margin: '20px 0', width: '100%' }}>
+                          <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.1)' }}></div>
+                          <div style={{ padding: '0 15px', fontSize: '11px', color: 'var(--color-accent)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 'bold' }}>Начало полета</div>
+                          <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.1)' }}></div>
+                      </div>
+                  );
+              }
+              if (msg.role === 'system' && msg.content === '[SEPARATOR] Конец полета') {
+                  return (
+                      <div key={idx} style={{ display: 'flex', alignItems: 'center', margin: '20px 0', width: '100%' }}>
+                          <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.1)' }}></div>
+                          <div style={{ padding: '0 15px', fontSize: '11px', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 'bold' }}>Конец полета</div>
+                          <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.1)' }}></div>
+                      </div>
+                  );
+              }
+              if (msg.role === 'system' && msg.content?.startsWith('[TOOL]')) {
+                  const match = msg.content.match(/^\[TOOL\]\s+([\w_]+):\s+(.*)$/);
+                  if (match) {
+                      const toolName = match[1];
+                      let toolArgs = match[2];
+                      try { toolArgs = JSON.parse(toolArgs); } catch (e) {}
+                      
+                      return (
+                        <div key={idx} className="chat-bubble-wrapper left">
+                          <div className="chat-bubble chat-bubble--tool" style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid var(--color-success)', color: 'var(--color-success)' }}>
+                            <strong>Дрон вызывает: {toolName}</strong>
+                            <pre style={{ margin: 0, fontSize: '11px', color: '#ccc' }}>{JSON.stringify(toolArgs, null, 2)}</pre>
+                          </div>
+                        </div>
+                      );
+                  }
+              }
+              return (
+                <div key={idx} className={`chat-bubble-wrapper ${msg.role === 'user' ? 'right' : 'left'}`}>
+                  <div className={`chat-bubble chat-bubble--${msg.role} ${msg.isError ? 'error-bubble' : ''}`}>
+                    {msg.content}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
             
             {isThinking && (
               <div className="chat-bubble-wrapper left">
@@ -260,8 +385,8 @@ export default function StartPage({ onStartFlight, loadingMessage, infoMessage, 
                 </div>
                 <button 
                   className="btn-primary start-flight-btn" 
-                  onClick={onStartFlight}
-                  disabled={!!loadingMessage || !hasRoute}
+                  onClick={handleStartRealFlight}
+                  disabled={!!loadingMessage || !hasRoute || isThinking}
                 >
                   <Play size={16} />
                   {loadingMessage || 'Запустить БПЛА'}
