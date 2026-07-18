@@ -454,10 +454,22 @@ async def stream_flight(websocket: WebSocket, project_id: int):
         import websockets
         
         try:
-            async with websockets.connect("ws://localhost:8001/stream_flight") as ai_ws:
+            # Disable websockets library ping timeout so it doesn't kill long idle streams
+            async with websockets.connect("ws://localhost:8001/stream_flight", ping_interval=None, ping_timeout=None) as ai_ws:
                 await ai_ws.send(route_json)
-                while True:
+                
+                # Start a keep_alive task to process ping/pong from the frontend browser
+                async def keep_alive_front():
                     try:
+                        while True:
+                            await websocket.receive()
+                    except WebSocketDisconnect:
+                        pass
+                
+                frontend_keep_alive = asyncio.create_task(keep_alive_front())
+                
+                try:
+                    while True:
                         line = await ai_ws.recv()
                         if line:
                             try:
@@ -488,8 +500,10 @@ async def stream_flight(websocket: WebSocket, project_id: int):
                                     await websocket.send_json({"role": "ai", "content": line})
                                 except Exception as e:
                                     print("DB save error", e)
-                    except websockets.exceptions.ConnectionClosed:
-                        break
+                except websockets.exceptions.ConnectionClosed:
+                    pass
+                finally:
+                    frontend_keep_alive.cancel()
         except Exception as e:
             print("Error connecting to ai_service websocket:", e)
             await websocket.send_json({"role": "ai", "content": f"Ошибка соединения с AI Service: {str(e)}"})
