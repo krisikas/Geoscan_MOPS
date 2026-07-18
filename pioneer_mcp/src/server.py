@@ -121,8 +121,8 @@ async def set_yaw(angle_deg: float) -> str:
 # --- камера ---
 
 @mcp.tool()
-async def get_single_camera_frame() -> str:
-    """Получить один кадр с камеры дрона без изменения угла наклона (возвращает путь к локально сохраненной картинке)."""
+async def get_single_camera_frame() -> Image:
+    """Получить один кадр с камеры дрона без изменения угла наклона (возвращает изображение)."""
     data = _r.get_frame_jpeg()
     if not data:
         return "Ошибка: Не удалось получить кадр с камеры"
@@ -147,11 +147,11 @@ async def get_single_camera_frame() -> str:
     with open(latest_path, "wb") as f:
         f.write(data)
         
-    return latest_path
+    return Image(data=data, format="jpeg")
 
 @mcp.tool()
-async def get_opt_camera_frame() -> str:
-    """Получить кадр с нижней камеры оптического потока (OPT). (возвращает путь к локально сохраненной картинке)"""
+async def get_opt_camera_frame() -> Image:
+    """Получить кадр с нижней камеры оптического потока (OPT). (возвращает изображение)"""
     data = _r.get_opt_frame_jpeg()
     if not data:
         return "Ошибка: Не удалось получить кадр с камеры"
@@ -176,11 +176,11 @@ async def get_opt_camera_frame() -> str:
     with open(latest_path, "wb") as f:
         f.write(data)
         
-    return latest_path
+    return Image(data=data, format="jpeg")
 
 @mcp.tool()
-async def get_multiframe() -> str:
-    """Получить композитное изображение из 4 кадров (+30, 0, -40, -80 градусов) для глобального обзора."""
+async def get_multiframe() -> Image:
+    """Получить композитное изображение из 4 кадров (+30, 0, -40, -80 градусов) для глобального обзора (возвращает само изображение)."""
     data = await _r.cmd_get_multiframe_jpeg()
     if not data:
         return "Ошибка: Не удалось собрать композитный кадр"
@@ -205,7 +205,7 @@ async def get_multiframe() -> str:
     with open(latest_path, "wb") as f:
         f.write(data)
         
-    return latest_path
+    return Image(data=data, format="jpeg")
 
 # --- сервопривод / reboot ---
 
@@ -245,6 +245,16 @@ async def get_sensors() -> str:
 async def get_flight_state() -> str:
     """Получить состояние полёта дрона."""
     return _r.res_flight_state()
+
+@mcp.tool()
+async def start_photogrammetry(project_id: str) -> str:
+    """Начать непрерывный сбор фотограмметрии. Кадры будут сохраняться в датасет для указанного проекта."""
+    return await _r.cmd_start_photogrammetry(project_id)
+
+@mcp.tool()
+async def stop_photogrammetry() -> str:
+    """Остановить фоновый сбор фотограмметрии."""
+    return await _r.cmd_stop_photogrammetry()
 
 
 # --- resources ---

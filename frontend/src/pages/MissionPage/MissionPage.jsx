@@ -24,7 +24,7 @@ export default function MissionPage({ onStartFlight, loadingMessage, infoMessage
   const [isThinking, setIsThinking] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
-  const [droneIp, setDroneIp] = useState('127.0.0.1');
+  const [droneIp, setDroneIp] = useState('10.132.236.186');
   const [realTrajectory, setRealTrajectory] = useState([]);
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);

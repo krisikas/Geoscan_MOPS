@@ -139,7 +139,7 @@ export default function RouteVisualizer({ coordinates = [], buildings = [], curr
             {realPoints.length > 0 ? (
                 <group 
                   position={realPoints[realPoints.length - 1]} 
-                  rotation={[0, (realTrajectory[realTrajectory.length - 1]?.yaw || 0) * Math.PI / 180, 0]}
+                  rotation={[0, (-(realTrajectory[realTrajectory.length - 1]?.yaw || 0) + 90) * Math.PI / 180, 0]}
                 >
                     {/* Sleek Drone Ring */}
                     <mesh rotation={[Math.PI/2, 0, 0]}>
@@ -154,7 +154,7 @@ export default function RouteVisualizer({ coordinates = [], buildings = [], curr
             ) : points[currentStep] && (
                 <group 
                   position={points[currentStep]} 
-                  rotation={[0, (coordinates[currentStep]?.yaw || 0) * Math.PI / 180, 0]}
+                  rotation={[0, (-(coordinates[currentStep]?.yaw || 0) + 90) * Math.PI / 180, 0]}
                 >
                     {/* Sleek Drone Ring */}
                     <mesh rotation={[Math.PI/2, 0, 0]}>
