@@ -15,8 +15,16 @@ from src.api.auth import get_current_user
 from src.schemas.project import ProjectCreate, ProjectResponse, ChatMessageResponse
 from src.services.ai import process_ai_image
 import httpx
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ValidationError
 from typing import List, Dict, Any, Set, Tuple, Optional
+
+class AgentToolCall(BaseModel):
+    name: str
+    args: dict = Field(default_factory=dict)
+
+class AgentResponse(BaseModel):
+    content: Optional[str] = None
+    tool: Optional[AgentToolCall] = None
 
 class Message(BaseModel):
     role: str
@@ -432,7 +440,7 @@ def start_flight(project_id: int, request: Request, db: Session = Depends(get_db
 from fastapi import WebSocket, WebSocketDisconnect
 
 @router.websocket("/{project_id}/stream_flight")
-async def stream_flight(websocket: WebSocket, project_id: int):
+async def stream_flight(websocket: WebSocket, project_id: int, ip: str = "127.0.0.1"):
     await websocket.accept()
     try:
         import os
@@ -444,7 +452,10 @@ async def stream_flight(websocket: WebSocket, project_id: int):
         db = SessionLocal()
         from src.db.models import Project
         project = db.query(Project).filter(Project.id == project_id).first()
-        route_json = json.dumps(project.route_data if project and project.route_data else {}, ensure_ascii=False)
+        
+        route_data = project.route_data if project and project.route_data else {}
+        route_data["drone_ip"] = ip
+        route_json = json.dumps(route_data, ensure_ascii=False)
         
         separator = ChatMessage(project_id=project_id, role="system", content="[SEPARATOR] Начало полета")
         db.add(separator)
@@ -462,7 +473,13 @@ async def stream_flight(websocket: WebSocket, project_id: int):
                 async def keep_alive_front():
                     try:
                         while True:
-                            await websocket.receive()
+                            try:
+                                msg = await websocket.receive_json()
+                                if msg.get("action") == "stop":
+                                    await ai_ws.close()
+                                    break
+                            except Exception:
+                                pass
                     except WebSocketDisconnect:
                         pass
                 
@@ -473,26 +490,24 @@ async def stream_flight(websocket: WebSocket, project_id: int):
                         line = await ai_ws.recv()
                         if line:
                             try:
-                                data = json.loads(line)
+                                agent_resp = AgentResponse.model_validate_json(line)
                                 try:
-                                    if data.get("type") == "PLANNER_RESPONSE" and data.get("tool_calls"):
-                                        for tc in data.get("tool_calls", []):
-                                            content_str = f"[TOOL] {tc.get('name')}: {json.dumps(tc.get('arguments', {}), ensure_ascii=False)}"
-                                            msg = ChatMessage(project_id=project_id, role="system", content=content_str)
-                                            db.add(msg)
-                                            await websocket.send_json({"role": "system", "content": content_str})
-                                    
-                                    content_text = data.get("content", "")
-                                    if content_text and isinstance(content_text, str) and content_text.strip():
-                                        msg = ChatMessage(project_id=project_id, role="ai", content=content_text.strip())
+                                    if agent_resp.tool:
+                                        content_str = f"[TOOL] {agent_resp.tool.name}: {json.dumps(agent_resp.tool.args, ensure_ascii=False)}"
+                                        msg = ChatMessage(project_id=project_id, role="system", content=content_str)
                                         db.add(msg)
-                                        await websocket.send_json({"role": "ai", "content": content_text.strip()})
+                                        await websocket.send_json({"role": "system", "content": content_str})
+                                    
+                                    if agent_resp.content and agent_resp.content.strip():
+                                        msg = ChatMessage(project_id=project_id, role="ai", content=agent_resp.content.strip())
+                                        db.add(msg)
+                                        await websocket.send_json({"role": "ai", "content": agent_resp.content.strip()})
                                     
                                     db.commit()
                                 except Exception as e:
                                     print("DB save error", e)
-                            except json.JSONDecodeError:
-                                # Save ai text to DB
+                            except ValidationError:
+                                # Fallback to save raw line as text if JSON doesn't match schema or isn't valid JSON
                                 try:
                                     msg = ChatMessage(project_id=project_id, role="ai", content=line)
                                     db.add(msg)
