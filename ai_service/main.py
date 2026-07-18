@@ -80,7 +80,7 @@ async def stream_flight(websocket: WebSocket):
     import asyncio
     try:
         PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
-        prompt_path = os.path.join(PROMPTS_DIR, "mock_flight.md")
+        prompt_path = os.path.join(PROMPTS_DIR, "flight_vla.md")
         
         with open(prompt_path, 'r', encoding='utf-8') as f:
             sys_prompt = f.read()
@@ -93,9 +93,9 @@ async def stream_flight(websocket: WebSocket):
             f"[ПЛАНОВЫЙ МАРШРУТ ДЛЯ ИСПОЛНЕНИЯ]\n{route_str}\n[КОНЕЦ МАРШРУТА]\n\n"
             f"Выполни полетную миссию строго по указанному маршруту."
         )
-        
+        print("Agent input: ", full_prompt)
         process = await asyncio.create_subprocess_exec(
-            "agy", "--print", full_prompt,
+            "agy", "--print", full_prompt, "--dangerously-skip-permissions",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
@@ -107,6 +107,7 @@ async def stream_flight(websocket: WebSocket):
                     break
                 line = line.decode('utf-8').strip()
                 if line:
+                    print("Agent output: ", line)
                     await websocket.send_text(line)
 
         await asyncio.gather(

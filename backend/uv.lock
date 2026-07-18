@@ -74,7 +74,7 @@ requires-dist = [
     { name = "dill", specifier = ">=0.4.1" },
     { name = "fastapi", specifier = ">=0.104.0" },
     { name = "httpx", specifier = ">=0.28.1" },
-    { name = "metashape", path = "metashape-2.3.1-cp39.cp310.cp311.cp312.cp313-abi3-macosx_11_0_universal2.macosx_10_13_x86_64.whl" },
+    { name = "metashape", path = "metashape-2.3.1-cp39.cp310.cp311.cp312.cp313-abi3-linux_x86_64.whl" },
     { name = "numpy", specifier = ">=1.24.0" },
     { name = "opencv-python", specifier = ">=4.8.0" },
     { name = "passlib", extras = ["bcrypt"], specifier = ">=1.7.4" },
@@ -841,9 +841,9 @@ wheels = [
 [[package]]
 name = "metashape"
 version = "2.3.1"
-source = { path = "metashape-2.3.1-cp39.cp310.cp311.cp312.cp313-abi3-macosx_11_0_universal2.macosx_10_13_x86_64.whl" }
+source = { path = "metashape-2.3.1-cp39.cp310.cp311.cp312.cp313-abi3-linux_x86_64.whl" }
 wheels = [
-    { filename = "metashape-2.3.1-cp39.cp310.cp311.cp312.cp313-abi3-macosx_11_0_universal2.macosx_10_13_x86_64.whl", hash = "sha256:27d89a18669816853ed5828fa7d1e6b28ef0e02aff2ccfa2eb6ebda8dd1badb4" },
+    { filename = "metashape-2.3.1-cp39.cp310.cp311.cp312.cp313-abi3-linux_x86_64.whl", hash = "sha256:90d61dbc371f1636e91e51db2e4eabacbb35e897e287f09252160f9632314fb3" },
 ]
 
 [[package]]
