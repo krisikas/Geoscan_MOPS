@@ -119,7 +119,7 @@ async def stream_flight(websocket: WebSocket):
         )
         # print("Agent input: ", full_prompt)
         process = await asyncio.create_subprocess_exec(
-            "agy", "--print", full_prompt, "--dangerously-skip-permissions",
+            "agy", "--print", full_prompt, "--dangerously-skip-permissions", "--print-timeout", "30m",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
