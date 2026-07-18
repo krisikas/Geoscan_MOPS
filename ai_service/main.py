@@ -46,11 +46,33 @@ async def generate_plan(request: PlanRequest):
         f"Новый запрос пользователя: {request.new_prompt}"
     )
 
-    cmd = ["agy", "--model", "Gemini 3.5 Flash (Medium)", "--print", full_prompt]
+    cmd = ["agy", "--print", full_prompt]
     
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        output = result.stdout.strip()
+        import asyncio
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        
+        try:
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=110.0)
+        except asyncio.TimeoutError:
+            process.kill()
+            print("AGY Agent timed out.")
+            return {
+                "text": "Планирование заняло слишком много времени. Пожалуйста, попробуйте уточнить запрос.",
+                "coordinates": [],
+                "buildings": []
+            }
+            
+        output = stdout.decode('utf-8').strip()
+        
+        if process.returncode != 0:
+            err = stderr.decode('utf-8')
+            print(f"AGY Error: {err}")
+            raise HTTPException(status_code=500, detail=f"AI Agent failed: {err}")
         
         # Extract the JSON object using regex to handle conversational fluff
         json_match = re.search(r'\{.*\}', output, re.DOTALL)
@@ -60,10 +82,9 @@ async def generate_plan(request: PlanRequest):
             return parsed_json
         else:
             raise ValueError("No JSON object found in output")
-        
-    except subprocess.CalledProcessError as e:
-        print(f"AGY Error: {e.stderr}")
-        raise HTTPException(status_code=500, detail=f"AI Agent failed: {e.stderr}")
+            
+    except HTTPException:
+        raise
     except (json.JSONDecodeError, ValueError) as e:
         print(f"JSON Parse Error: {e}\nOutput was: {output}")
         # fallback
@@ -72,6 +93,9 @@ async def generate_plan(request: PlanRequest):
             "coordinates": [],
             "buildings": []
         }
+    except Exception as e:
+        print(f"AGY Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"AI Agent failed: {str(e)}")
 
 @app.websocket("/stream_flight")
 async def stream_flight(websocket: WebSocket):
@@ -93,12 +117,14 @@ async def stream_flight(websocket: WebSocket):
             f"[ПЛАНОВЫЙ МАРШРУТ ДЛЯ ИСПОЛНЕНИЯ]\n{route_str}\n[КОНЕЦ МАРШРУТА]\n\n"
             f"Выполни полетную миссию строго по указанному маршруту."
         )
-        print("Agent input: ", full_prompt)
+        # print("Agent input: ", full_prompt)
         process = await asyncio.create_subprocess_exec(
             "agy", "--print", full_prompt, "--dangerously-skip-permissions",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
+
+        send_lock = asyncio.Lock()
 
         async def read_stream(stream):
             while True:
@@ -107,14 +133,27 @@ async def stream_flight(websocket: WebSocket):
                     break
                 line = line.decode('utf-8').strip()
                 if line:
-                    print("Agent output: ", line)
-                    await websocket.send_text(line)
+                    # print("Agent output: ", line)
+                    async with send_lock:
+                        await websocket.send_text(line)
+
+        # Keep reading from the websocket to process ping/pong frames and avoid timeout
+        async def keep_alive():
+            try:
+                while True:
+                    await websocket.receive()
+            except WebSocketDisconnect:
+                if process.returncode is None:
+                    process.terminate()
+
+        keep_alive_task = asyncio.create_task(keep_alive())
 
         await asyncio.gather(
             read_stream(process.stdout),
             read_stream(process.stderr)
         )
         await process.wait()
+        keep_alive_task.cancel()
     except WebSocketDisconnect:
         print("Client disconnected from ai_service")
         if 'process' in locals() and process.returncode is None:
