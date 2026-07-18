@@ -4,6 +4,7 @@ ROOT_DIR=$(pwd)
 MCP_PID=""
 AI_PID=""
 BACKEND_PID=""
+TELEMETRY_PID=""
 
 cleanup() {
     echo -e "\nEnding..."
@@ -21,6 +22,11 @@ cleanup() {
     if [ -n "$BACKEND_PID" ]; then
         echo "Stopping backend service..."
         kill $BACKEND_PID 2>/dev/null
+    fi
+
+    if [ -n "$TELEMETRY_PID" ]; then
+        echo "Stopping telemetry service..."
+        kill $TELEMETRY_PID 2>/dev/null
     fi
     
     cd "$ROOT_DIR" || exit
@@ -58,4 +64,10 @@ export YOLO_MODEL_PATH="./best.pt"
 uv run uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload &
 BACKEND_PID=$!
 
-wait $MCP_PID $AI_PID $BACKEND_PID
+echo "Starting telemetry service..."
+cd "$ROOT_DIR/telemetry_service" || exit
+uv sync
+uv run uvicorn main:app --host 0.0.0.0 --port 8002 --reload &
+TELEMETRY_PID=$!
+
+wait $MCP_PID $AI_PID $BACKEND_PID $TELEMETRY_PID

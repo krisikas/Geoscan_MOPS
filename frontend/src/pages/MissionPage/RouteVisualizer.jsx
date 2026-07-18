@@ -39,12 +39,17 @@ function Building({ basePoints = [], height = 10, color = "#444" }) {
   );
 }
 
-export default function RouteVisualizer({ coordinates = [], buildings = [], currentStep = 0 }) {
+export default function RouteVisualizer({ coordinates = [], buildings = [], currentStep = 0, realTrajectory = [] }) {
   // Convert coordinate objects {x,y,z} into an array of THREE.Vector3
   const points = useMemo(() => {
     if (!coordinates || coordinates.length === 0) return [];
     return coordinates.map(c => new THREE.Vector3(c.x, c.z, -c.y)); 
   }, [coordinates]);
+
+  const realPoints = useMemo(() => {
+    if (!realTrajectory || realTrajectory.length === 0) return [];
+    return realTrajectory.map(c => new THREE.Vector3(c.x, c.z, -c.y));
+  }, [realTrajectory]);
 
   const hasRoute = points.length > 0;
   const visiblePoints = hasRoute ? points.slice(0, currentStep + 1) : [];
@@ -130,8 +135,23 @@ export default function RouteVisualizer({ coordinates = [], buildings = [], curr
               </group>
             ))}
 
-            {/* Directional Drone Indicator for current step */}
-            {points[currentStep] && (
+            {/* Directional Drone Indicator for planned step or real telemetry */}
+            {realPoints.length > 0 ? (
+                <group 
+                  position={realPoints[realPoints.length - 1]} 
+                  rotation={[0, (realTrajectory[realTrajectory.length - 1]?.yaw || 0) * Math.PI / 180, 0]}
+                >
+                    {/* Sleek Drone Ring */}
+                    <mesh rotation={[Math.PI/2, 0, 0]}>
+                        <torusGeometry args={[baseSize * 2.5, baseSize * 0.3, 16, 64]} />
+                        <meshStandardMaterial color="#3b82f6" emissive="#3b82f6" emissiveIntensity={1} transparent opacity={0.8} />
+                    </mesh>
+                    <mesh position={[baseSize * 3, 0, 0]} rotation={[0, 0, -Math.PI/2]}>
+                        <coneGeometry args={[baseSize, baseSize * 2, 16]} />
+                        <meshStandardMaterial color="#60a5fa" emissive="#60a5fa" emissiveIntensity={2} />
+                    </mesh>
+                </group>
+            ) : points[currentStep] && (
                 <group 
                   position={points[currentStep]} 
                   rotation={[0, (coordinates[currentStep]?.yaw || 0) * Math.PI / 180, 0]}
@@ -147,6 +167,16 @@ export default function RouteVisualizer({ coordinates = [], buildings = [], curr
                         <meshStandardMaterial color="#ff4444" emissive="#ff4444" emissiveIntensity={2} />
                     </mesh>
                 </group>
+            )}
+
+            {/* Real Telemetry Trajectory Line */}
+            {realPoints.length > 1 && (
+                <Line 
+                  points={realPoints} 
+                  color="#3b82f6" 
+                  lineWidth={3}
+                  dashed={false}
+                />
             )}
           </group>
         )}

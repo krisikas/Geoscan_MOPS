@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './MissionPage.css';
-import { Send, Map, Crosshair, Play, Info, Plus } from 'lucide-react';
+import { Send, Map, Crosshair, Play, Info, Plus, Mic } from 'lucide-react';
 import RouteVisualizer from './RouteVisualizer';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
@@ -24,14 +24,20 @@ export default function MissionPage({ onStartFlight, loadingMessage, infoMessage
   const [isThinking, setIsThinking] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
+  const [droneIp, setDroneIp] = useState('127.0.0.1');
+  const [realTrajectory, setRealTrajectory] = useState([]);
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
   const wsRef = useRef(null);
+  const telemetryWsRef = useRef(null);
+  const recognitionRef = useRef(null);
+  const [isRecording, setIsRecording] = useState(false);
 
   // Clean up WS on unmount
   useEffect(() => {
       return () => {
           if (wsRef.current) wsRef.current.close();
+          if (telemetryWsRef.current) telemetryWsRef.current.close();
       };
   }, []);
 
@@ -42,6 +48,48 @@ export default function MissionPage({ onStartFlight, loadingMessage, infoMessage
       const scrollHeight = textareaRef.current.scrollHeight;
       textareaRef.current.style.height = scrollHeight + 'px';
     }
+  };
+
+  const toggleRecording = () => {
+    if (isRecording) {
+      recognitionRef.current?.stop();
+      setIsRecording(false);
+      return;
+    }
+    
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('Ваш браузер не поддерживает голосовой ввод. Попробуйте Google Chrome.');
+      return;
+    }
+    
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'ru-RU';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    
+    recognition.onstart = () => setIsRecording(true);
+    
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      setChatInput(prev => prev + (prev ? ' ' : '') + transcript);
+      if (textareaRef.current) {
+        setTimeout(() => {
+          textareaRef.current.style.height = '44px';
+          textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px';
+        }, 50);
+      }
+    };
+    
+    recognition.onerror = (e) => {
+      console.error('Speech recognition error', e);
+      setIsRecording(false);
+    };
+    
+    recognition.onend = () => setIsRecording(false);
+    
+    recognitionRef.current = recognition;
+    recognition.start();
   };
 
   useEffect(() => {
@@ -196,8 +244,9 @@ export default function MissionPage({ onStartFlight, loadingMessage, infoMessage
 
     setIsExecuting(true);
     setIsThinking(true);
+    setRealTrajectory([]); // clear previous flight trajectory
 
-    const wsUrl = API_BASE_URL.replace(/^http/, 'ws') + `/api/projects/${activeProject.id}/stream_flight`;
+    const wsUrl = API_BASE_URL.replace(/^http/, 'ws') + `/api/projects/${activeProject.id}/stream_flight?ip=${droneIp}`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
@@ -220,7 +269,37 @@ export default function MissionPage({ onStartFlight, loadingMessage, infoMessage
     ws.onclose = () => {
         setIsThinking(false);
         setIsExecuting(false);
+        if (telemetryWsRef.current) telemetryWsRef.current.close();
     };
+
+    // Connect to Telemetry service
+    const telemetryUrl = `ws://localhost:8002/ws/telemetry/${activeProject.id}?ip=${droneIp}`;
+    const telemetryWs = new WebSocket(telemetryUrl);
+    telemetryWsRef.current = telemetryWs;
+    
+    telemetryWs.onmessage = (e) => {
+        try {
+            const tdata = JSON.parse(e.data);
+            if (tdata.type === "telemetry") {
+                setRealTrajectory(prev => [...prev, {x: tdata.x, y: tdata.y, z: tdata.z}]);
+            }
+        } catch (err) {}
+    };
+  };
+
+  const handleEmergencyStop = () => {
+    if (wsRef.current) {
+        wsRef.current.send(JSON.stringify({ action: "stop" }));
+    }
+    // Small delay to ensure AI process terminates before taking control via Pioneer SDK
+    setTimeout(async () => {
+        try {
+            await fetch(`http://localhost:8002/emergency_stop?ip=${droneIp}`, { method: 'POST' });
+            setMessages(prev => [...prev, { role: 'system', content: '[SYSTEM] Экстренная остановка выполнена' }]);
+        } catch (e) {
+            console.error("Emergency stop error:", e);
+        }
+    }, 200);
   };
 
   const hasRoute = coordinates.length > 0;
@@ -360,14 +439,22 @@ export default function MissionPage({ onStartFlight, loadingMessage, infoMessage
                   }
                 }
               }}
-              disabled={!activeProject}
+              disabled={!activeProject || isExecuting}
             />
+            <button 
+              className={`btn-icon ${isRecording ? 'recording' : ''}`} 
+              onClick={toggleRecording} 
+              disabled={!activeProject || isThinking || isExecuting}
+              title="Голосовой ввод"
+            >
+              <Mic size={18} />
+            </button>
             <button className="btn-icon" onClick={() => {
               handleSendMessage();
               if (textareaRef.current) {
                 textareaRef.current.style.height = '44px';
               }
-            }} disabled={!activeProject || isThinking || !chatInput.trim()}>
+            }} disabled={!activeProject || isThinking || !chatInput.trim() || isExecuting}>
               <Send size={18} />
             </button>
           </div>
@@ -375,23 +462,45 @@ export default function MissionPage({ onStartFlight, loadingMessage, infoMessage
 
         <div className="map-container">
           <div className="map-view" style={{ position: 'relative' }}>
-            <RouteVisualizer coordinates={coordinates} buildings={buildings} currentStep={currentStep} />
+            <RouteVisualizer coordinates={coordinates} buildings={buildings} currentStep={currentStep} realTrajectory={realTrajectory} />
           </div>
           
           <div className="map-controls" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '15px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div className="mission-info">
+                <div className="mission-info" style={{ flex: 1 }}>
                   <h4>Текущая миссия</h4>
-                  <p>{hasRoute ? `Маршрут построен. Количество точек: ${coordinates.length}` : 'Параметры не заданы'}</p>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '4px' }}>
+                      <p style={{ margin: 0 }}>{hasRoute ? `Точек: ${coordinates.length}` : 'Параметры не заданы'}</p>
+                      {hasRoute && (
+                          <input 
+                              type="text" 
+                              value={droneIp} 
+                              onChange={(e) => setDroneIp(e.target.value)} 
+                              placeholder="IP дрона" 
+                              disabled={isExecuting}
+                              style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: '#fff', fontSize: '13px', width: '120px' }}
+                          />
+                      )}
+                  </div>
                 </div>
-                <button 
-                  className="btn-primary start-flight-btn" 
-                  onClick={handleStartRealFlight}
-                  disabled={!!loadingMessage || !hasRoute || isThinking}
-                >
-                  <Play size={16} />
-                  {loadingMessage || 'Запустить БПЛА'}
-                </button>
+                {!isExecuting ? (
+                    <button 
+                    className="btn-primary start-flight-btn" 
+                    onClick={handleStartRealFlight}
+                    disabled={!!loadingMessage || !hasRoute || isThinking}
+                    >
+                    <Play size={16} />
+                    {loadingMessage || 'Запустить БПЛА'}
+                    </button>
+                ) : (
+                    <button 
+                    className="btn-primary start-flight-btn" 
+                    onClick={handleEmergencyStop}
+                    style={{ background: '#ef4444', borderColor: '#ef4444' }}
+                    >
+                    Прервать полет
+                    </button>
+                )}
             </div>
             
             {hasRoute && (
