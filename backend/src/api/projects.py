@@ -170,6 +170,7 @@ def list_images(project_id: int, db: Session = Depends(get_db), current_user: Us
         "metashape_input": _get_images(os.path.join(base, "metashape_input")),
         "metashape_project": _get_images(os.path.join(base, "metashape_project")),
         "metashape_ai_output": _get_images(os.path.join(base, "metashape_ai_output")),
+        "thermal_input": _get_images(os.path.join(base, "thermal_input")),
         "processing_ai": ai_proc,
         "processing_metashape": meta_proc
     }
@@ -180,7 +181,7 @@ def get_image(project_id: int, group: str, filename: str, db: Session = Depends(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
         
-    if group not in ["ai_input", "ai_output", "metashape_input", "metashape_project", "metashape_ai_output"]:
+    if group not in ["ai_input", "ai_output", "metashape_input", "metashape_project", "metashape_ai_output", "thermal_input"]:
         raise HTTPException(status_code=400, detail="Invalid group")
         
     file_path = os.path.join(PROJECTS_ROOT, str(project.id), group, filename)
@@ -191,7 +192,7 @@ def get_image(project_id: int, group: str, filename: str, db: Session = Depends(
 
 @router.delete("/{project_id}/images/{group}/{filename}")
 def delete_image(project_id: int, group: str, filename: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    if group not in ["ai_input", "ai_output", "metashape_input", "metashape_project", "metashape_ai_output"]:
+    if group not in ["ai_input", "ai_output", "metashape_input", "metashape_project", "metashape_ai_output", "thermal_input"]:
         raise HTTPException(status_code=400, detail="Invalid group")
     project = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
     if not project:
