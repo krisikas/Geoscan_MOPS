@@ -16,7 +16,7 @@ export default function ResultPage() {
   
   const [projects, setProjects] = useState([]);
   const [activeProject, setActiveProject] = useState(null);
-  const [images, setImages] = useState({ projectId: null, ai_input: [], ai_output: [], metashape_input: [], metashape_output: [] });
+  const [images, setImages] = useState({ projectId: null, ai_input: [], ai_output: [], metashape_input: [], metashape_output: [], thermal_input: [] });
   const [activeGroup, setActiveGroup] = useState('ai');
   const [showAIOutput, setShowAIOutput] = useState(false);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
@@ -108,7 +108,7 @@ export default function ResultPage() {
 
   useEffect(() => {
     if (activeProject?.id) { 
-      setImages({ projectId: null, ai_input: [], ai_output: [], metashape_input: [], metashape_project: [], metashape_ai_output: [] });
+      setImages({ projectId: null, ai_input: [], ai_output: [], metashape_input: [], metashape_project: [], metashape_ai_output: [], thermal_input: [] });
       setObjectUrls(prev => {
           Object.values(prev).forEach(url => {
               try { URL.revokeObjectURL(url); } catch (e) {}
@@ -280,7 +280,7 @@ export default function ResultPage() {
     const currentProjectId = activeProject.id;
     
     const missingKeys = [];
-    for (const group of ['ai_input', 'ai_output', 'metashape_input', 'metashape_project', 'metashape_ai_output']) {
+    for (const group of ['ai_input', 'ai_output', 'metashape_input', 'metashape_project', 'metashape_ai_output', 'thermal_input']) {
         for (const img of images[group] || []) {
             const key = `${currentProjectId}_${group}_${img}`;
             if (!objectUrls[key]) {
@@ -312,8 +312,8 @@ export default function ResultPage() {
     fetchMissing();
   }, [images, activeProject?.id, objectUrls]);
 
-  const folderKey = activeGroup === 'ai' ? 'ai_input' : (activeGroup === 'metashape' ? 'metashape_input' : 'metashape_project');
-  const currentGroupImages = activeGroup === 'ai' ? images.ai_input : (activeGroup === 'metashape' ? images.metashape_input : (images.metashape_project || []).filter(img => img.toLowerCase().endsWith('.glb') || img.toLowerCase().endsWith('.gltf')));
+  const folderKey = activeGroup === 'ai' ? 'ai_input' : (activeGroup === 'thermal' ? 'thermal_input' : (activeGroup === 'metashape' ? 'metashape_input' : 'metashape_project'));
+  const currentGroupImages = activeGroup === 'ai' ? images.ai_input : (activeGroup === 'thermal' ? images.thermal_input : (activeGroup === 'metashape' ? images.metashape_input : (images.metashape_project || []).filter(img => img.toLowerCase().endsWith('.glb') || img.toLowerCase().endsWith('.gltf'))));
 
   const isImageProcessing = (img) => {
       if (processingImages.has(img)) return true;
@@ -429,6 +429,9 @@ export default function ResultPage() {
             <button className={`tab-btn ${activeGroup === 'ai' ? 'active' : ''}`} onClick={() => setActiveGroup('ai')}>
               <ImageIcon size={18} /> Фото для ИИ
             </button>
+            <button className={`tab-btn ${activeGroup === 'thermal' ? 'active' : ''}`} onClick={() => setActiveGroup('thermal')}>
+              <ImageIcon size={18} /> Тепловизор
+            </button>
             <button className={`tab-btn ${activeGroup === 'metashape' ? 'active' : ''}`} onClick={() => setActiveGroup('metashape')}>
               <Box size={18} /> Исходники Metashape
             </button>
@@ -524,7 +527,7 @@ export default function ResultPage() {
                     currentIndex={fullscreenImageIndex}
                     onNavigate={(dir) => {
                         let next = fullscreenImageIndex + dir;
-                        if (next < currentGroupImages.length) {
+                        if (next >= 0 && next < currentGroupImages.length) {
                           setFullscreenImageIndex(next);
                         }
                     }}
