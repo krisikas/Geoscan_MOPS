@@ -461,21 +461,46 @@ def upload_photo(project_id: int, payload: PhotoUpload, current_user: User = Dep
         
     return {"status": "success"}
 
+@router.post("/{project_id}/upload_thermal")
+def upload_thermal(project_id: int, payload: PhotoUpload, current_user: User = Depends(get_current_user)):
+    import os
+    import base64
+    import time
+    
+    # Save the base64 image to backend/data/projects/{project_id}/thermal_input
+    thermal_dir = os.path.join(os.getcwd(), "data", "projects", str(project_id), "thermal_input")
+    os.makedirs(thermal_dir, exist_ok=True)
+    
+    img_data = base64.b64decode(payload.image)
+    filename = f"thermal_{int(time.time()*1000)}.jpg"
+    filepath = os.path.join(thermal_dir, filename)
+    
+    with open(filepath, "wb") as f:
+        f.write(img_data)
+        
+    return {"status": "success"}
+
 @router.delete("/{project_id}/photos")
 async def clear_photos(project_id: int, current_user: User = Depends(get_current_user)):
     import os
     import shutil
-    metashape_dir = os.path.join(os.getcwd(), "data", "projects", str(project_id), "metashape_input")
-    if os.path.exists(metashape_dir):
-        for filename in os.listdir(metashape_dir):
-            file_path = os.path.join(metashape_dir, filename)
-            try:
-                if os.path.isfile(file_path) or os.path.islink(file_path):
-                    os.unlink(file_path)
-                elif os.path.isdir(file_path):
-                    shutil.rmtree(file_path)
-            except Exception as e:
-                pass
+    
+    directories_to_clear = [
+        os.path.join(os.getcwd(), "data", "projects", str(project_id), "metashape_input"),
+        os.path.join(os.getcwd(), "data", "projects", str(project_id), "thermal_input")
+    ]
+    
+    for dir_path in directories_to_clear:
+        if os.path.exists(dir_path):
+            for filename in os.listdir(dir_path):
+                file_path = os.path.join(dir_path, filename)
+                try:
+                    if os.path.isfile(file_path) or os.path.islink(file_path):
+                        os.unlink(file_path)
+                    elif os.path.isdir(file_path):
+                        shutil.rmtree(file_path)
+                except Exception as e:
+                    pass
     return {"status": "success"}
 
 from fastapi import WebSocket, WebSocketDisconnect

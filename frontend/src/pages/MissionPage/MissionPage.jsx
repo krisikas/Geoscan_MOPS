@@ -27,6 +27,7 @@ export default function MissionPage({ onStartFlight, loadingMessage, infoMessage
   const [droneIp, setDroneIp] = useState('10.132.236.186');
   const [realTrajectory, setRealTrajectory] = useState([]);
   const [droneFeed, setDroneFeed] = useState(null);
+  const [thermalFeed, setThermalFeed] = useState(null);
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
   const wsRef = useRef(null);
@@ -285,6 +286,8 @@ export default function MissionPage({ onStartFlight, loadingMessage, infoMessage
                 setRealTrajectory(prev => [...prev, {x: tdata.x, y: tdata.y, z: tdata.z, yaw: tdata.yaw}]);
             } else if (tdata.type === "photo") {
                 setDroneFeed(tdata.image);
+            } else if (tdata.type === "thermal") {
+                setThermalFeed(tdata.image);
             }
         } catch (err) {}
     };
@@ -465,7 +468,7 @@ export default function MissionPage({ onStartFlight, loadingMessage, infoMessage
 
         <div className="map-container">
           <div className="map-view" style={{ position: 'relative' }}>
-            <RouteVisualizer coordinates={coordinates} buildings={buildings} currentStep={currentStep} realTrajectory={realTrajectory} droneFeed={droneFeed} />
+            <RouteVisualizer coordinates={coordinates} buildings={buildings} currentStep={currentStep} realTrajectory={realTrajectory} droneFeed={droneFeed} thermalFeed={thermalFeed} />
           </div>
           
           <div className="map-controls" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '15px' }}>
