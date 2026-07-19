@@ -289,7 +289,7 @@ class DroneRuntime:
 
     # ---- навигация ----
 
-    async def cmd_go_to_local_point(self, x: float, y: float, z: float, yaw: float | None = None, speed: float = 0.6) -> str:
+    async def cmd_go_to_local_point(self, x: float, y: float, z: float, yaw: float | None = None, speed: float = 0.6, camera_angle: float | None = None) -> str:
         for c in (self.__chk(), self.__chk_sky(), self.__chk_alt(z), self.__chk_bat()):
             if c:
                 return c
@@ -312,17 +312,20 @@ class DroneRuntime:
                 distance = math.sqrt((x - lp[0])**2 + (y - lp[1])**2 + (z - lp[2])**2)
                 flight_time = int(distance / speed) if speed > 0 else 0
 
+            if camera_angle is not None:
+                await self.cmd_set_camera_angle(camera_angle)
+
             self.__p.go_to_local_point(x, y, z, yaw, time=flight_time)
 
             while not self.__p.point_reached():
                 await asyncio.sleep(0.1)
 
-            return self.__ok("Команда полёта к точке отправлена", {"x": x, "y": y, "z": z, "yaw": yaw, "speed": speed, "flight_time": flight_time})
+            return self.__ok("Команда полёта к точке отправлена", {"x": x, "y": y, "z": z, "yaw": yaw, "speed": speed, "flight_time": flight_time, "camera_angle": camera_angle})
         except Exception as ex:
             self.__hexc(ex)
             return self.__err(str(ex))
 
-    async def cmd_go_to_local_point_relative(self, dx: float, dy: float, dz: float, dyaw: float | None = None, speed: float = 0.6) -> str:
+    async def cmd_go_to_local_point_relative(self, dx: float, dy: float, dz: float, dyaw: float | None = None, speed: float = 0.6, camera_angle: float | None = None) -> str:
         for c in (self.__chk(), self.__chk_sky(), self.__chk_bat()):
             if c:
                 return c
@@ -367,6 +370,9 @@ class DroneRuntime:
         flight_time = int(distance / speed) if speed > 0 else 0
 
         try:
+            if camera_angle is not None:
+                await self.cmd_set_camera_angle(camera_angle)
+
             self.__p.go_to_local_point(target_x, target_y, target_z, target_yaw, time=flight_time)
 
             while not self.__p.point_reached():
@@ -376,7 +382,8 @@ class DroneRuntime:
                 "dx": dx, "dy": dy, "dz": dz, "dyaw": dyaw, "speed": speed, "flight_time": flight_time,
                 "target_x": round(target_x, 3), 
                 "target_y": round(target_y, 3), 
-                "target_z": round(target_z, 3)
+                "target_z": round(target_z, 3),
+                "camera_angle": camera_angle
             })
         except Exception as ex:
             self.__hexc(ex)
@@ -460,19 +467,24 @@ class DroneRuntime:
     async def cmd_get_multiframe_jpeg(self) -> bytes | None:
         if not self.__conn or not self.__streamer:
             return None
+        
+        session = await self._get_session()
 
         was_paused = True
         try:
-            session = await self._get_session()
             async with session.get("http://localhost:8002/photogrammetry/status", timeout=2) as resp:
                 if resp.status == 200:
-                    data = await resp.json()
-                    was_paused = data.get("is_paused", True)
+                    status_data = await resp.json()
+                    was_paused = status_data.get("is_paused", True)
             
-            if not was_paused:
-                await session.post("http://localhost:8002/photogrammetry/pause", timeout=2)
+            await session.post("http://localhost:8002/photogrammetry/pause", timeout=2)
         except Exception as e:
             _lg.warning(f"Failed to handle photogrammetry pause: {e}")
+
+        await asyncio.sleep(0.3)
+
+        # Сохраняем текущий угол камеры
+        saved_angle = getattr(self, '_current_camera_angle', -20)
 
         angles = [30, 0, -40, -80]
         frames = []
@@ -505,12 +517,12 @@ class DroneRuntime:
 
         _, buffer = cv2.imencode('.jpg', combined)
 
-        # Возвращаем камеру в базовое положение
-        await self.cmd_set_camera_angle(-20)
+        # Возвращаем камеру в предыдущее положение
+        await self.cmd_set_camera_angle(saved_angle)
 
+        await asyncio.sleep(0.3)
         if not was_paused:
             try:
-                session = await self._get_session()
                 await session.post("http://localhost:8002/photogrammetry/resume", timeout=2)
             except Exception as e:
                 _lg.warning(f"Failed to resume photogrammetry: {e}")
@@ -534,6 +546,7 @@ class DroneRuntime:
                 response_data = json.loads(response_text)
                 
                 if response.status == 200:
+                    self._current_camera_angle = angle
                     return self.__ok(f"Угол камеры установлен: {angle}°", {"angle": angle})
                 else:
                     error_msg = response_data.get("message", "Неизвестная ошибка")
