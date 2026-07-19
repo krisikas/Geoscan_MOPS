@@ -1,21 +1,20 @@
 """Ядро управления дроном."""
 
 from __future__ import annotations
-
 import asyncio
 import json
 import logging
 import math
-
 import cv2
 import numpy as np
-
 import urllib.request
 import aiohttp
 import os
 import time
 import base64
 from dotenv import load_dotenv
+from pioneer_sdk2 import Pioneer
+
 
 load_dotenv()
 
@@ -48,7 +47,7 @@ class CameraStreamer:
             pass
         return None
 
-    def get_opt_jpeg(self) -> bytes | None: # Возвращаем bytes
+    def get_opt_jpeg(self) -> bytes | None:
         try:
             req = urllib.request.Request(f'http://{self.ip}:7000/opt_camera')
             with urllib.request.urlopen(req, timeout=2.0) as response:
@@ -72,9 +71,6 @@ class CameraStreamer:
         except Exception:
             pass
         return None
-
-# from pioneer_sdk2 import Pioneer, ServoCamera, ServoPriority
-from pioneer_sdk2 import Pioneer
 
 _Camera = None
 _CameraType = None
@@ -140,10 +136,7 @@ class DroneRuntime:
 
     def __chk_bat(self) -> str | None:
         try:
-            # b = self.__p.get_battery_status()
-            # v = b[0] if b else None
-            b = 8.0 # ПРОСТО КОСТЫЛЬ
-            v = b # ПРОСТО КОСТЫЛЬ
+            v = 8.0 # ПРОСТО КОСТЫЛЬ
         except Exception:
             v = None
         if v is None:
@@ -161,7 +154,6 @@ class DroneRuntime:
     def __fly_state_name(self) -> str:
         return self.__p.get_fly_state().name
 
-    # ---- public API (called from server.py) ----
 
     @property
     def connected(self) -> bool:
@@ -304,7 +296,7 @@ class DroneRuntime:
                         if resp_data.get("status") == "success":
                             lp = resp_data.get("position")
             except Exception:
-                pass # Если не удалось получить позицию, полетим с текущей скоростью (time=0)
+                pass
             
             flight_time = 0
             if lp:
@@ -329,7 +321,7 @@ class DroneRuntime:
         try:
             o = self.__p.get_orientation()
             
-            # --- Запрос позиции по HTTP (как в res_telemetry) ---
+            # --- Запрос позиции по HTTP ---
             lp = None
             drone_ip = self.__DEFAULT_TCP.split(':')[0]
             url = f"http://{drone_ip}:8000/drone/position"
@@ -437,56 +429,7 @@ class DroneRuntime:
             self.__hexc(ex)
             return self.__err(str(ex))
 
-    # # ---- периферия ----
-
-    # async def cmd_led(self, r: float, g: float, b: float, led_id: int = 255) -> str:
-    #     e = self.__chk()
-    #     if e:
-    #         return e
-    #     try:
-    #         res = self.__p.led_control(led_id, r, g, b)
-    #         return self.__ok("Светодиоды обновлены", {"led_id": led_id, "r": r, "g": g, "b": b}) if res else self.__err("Не удалось обновить светодиоды")
-    #     except Exception as ex:
-    #         return self.__err(str(ex))
-
-    # async def cmd_grab_open(self) -> str:
-    #     e = self.__chk()
-    #     if e:
-    #         return e
-    #     try:
-    #         return self.__ok("Захват открыт") if self.__p.grab_open() else self.__err("Не удалось открыть захват")
-    #     except Exception as ex:
-    #         return self.__err(str(ex))
-
-    # async def cmd_grab_close(self) -> str:
-    #     e = self.__chk()
-    #     if e:
-    #         return e
-    #     try:
-    #         return self.__ok("Захват закрыт") if self.__p.grab_close() else self.__err("Не удалось закрыть захват")
-    #     except Exception as ex:
-    #         return self.__err(str(ex))
-
-    # async def cmd_cargo_grab(self) -> str:
-    #     e = self.__chk()
-    #     if e:
-    #         return e
-    #     try:
-    #         return self.__ok("Магнитный захват включён") if self.__p.cargo_grab() else self.__err("Не удалось включить магнитный захват")
-    #     except Exception as ex:
-    #         return self.__err(str(ex))
-
-    # async def cmd_cargo_release(self) -> str:
-    #     e = self.__chk()
-    #     if e:
-    #         return e
-    #     try:
-    #         return self.__ok("Магнитный захват выключен") if self.__p.cargo_release() else self.__err("Не удалось выключить магнитный захват")
-    #     except Exception as ex:
-    #         return self.__err(str(ex))
-
     # ---- камера ----
-
 
     def get_frame_jpeg(self) -> bytes:
         if not self.__conn or not self.__streamer:
@@ -627,7 +570,6 @@ class DroneRuntime:
                     if resp_data.get("status") == "success":
                         lp = resp_data.get("position")
             except Exception as http_ex:
-                # Если сервер недоступен или датчики не готовы (статус 503)
                 print(f"Ошибка получения позиции по HTTP: {http_ex}")
             # ----------------------------------------------------------------
             
