@@ -181,6 +181,42 @@ async def fetch_photo_loop(ip: str, project_id: str, websocket: WebSocket, cooki
             except Exception as e:
                 await asyncio.sleep(2.0)
 
+async def fetch_thermal_loop(ip: str, project_id: str, websocket: WebSocket, cookies: dict):
+    url = f"http://{ip}:7000/thermal_absolute"
+    backend_url_upload = f"http://localhost:8000/api/projects/{project_id}/upload_thermal"
+    
+    async with aiohttp.ClientSession(cookies=cookies) as session:
+        while True:
+            try:
+                async with session.get(url, timeout=2.0) as response:
+                    if response.status == 200:
+                        global is_photogrammetry_paused
+                        if is_photogrammetry_paused:
+                            await asyncio.sleep(0.4)
+                            continue
+
+                        data = await response.json()
+                        if "image" in data:
+                            img_b64 = data["image"]
+                            
+                            # 1. Отправляем фото на фронтенд для PIP-трансляции
+                            await websocket.send_json({
+                                "type": "thermal",
+                                "image": img_b64
+                            })
+                            
+                            # 2. Отправляем фото на бэкенд для сохранения
+                            try:
+                                await session.post(backend_url_upload, json={"image": img_b64}, timeout=2.0)
+                            except Exception as e:
+                                print(f"Error sending thermal photo to backend: {e}")
+                                
+                        await asyncio.sleep(0.4)
+                    else:
+                        await asyncio.sleep(2.0)
+            except Exception as e:
+                await asyncio.sleep(2.0)
+
 @app.websocket("/ws/telemetry/{project_id}")
 async def telemetry_ws(websocket: WebSocket, project_id: str, ip: str = Query(...)):
     await websocket.accept()
@@ -191,6 +227,7 @@ async def telemetry_ws(websocket: WebSocket, project_id: str, ip: str = Query(..
     
     telemetry_task = asyncio.create_task(fetch_telemetry_loop(websocket, ip))
     photo_task = asyncio.create_task(fetch_photo_loop(ip, project_id, websocket, cookies))
+    thermal_task = asyncio.create_task(fetch_thermal_loop(ip, project_id, websocket, cookies))
     
     try:
         while True:
@@ -201,3 +238,4 @@ async def telemetry_ws(websocket: WebSocket, project_id: str, ip: str = Query(..
         active_websockets.discard(websocket)
         telemetry_task.cancel()
         photo_task.cancel()
+        thermal_task.cancel()

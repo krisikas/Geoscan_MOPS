@@ -16,7 +16,7 @@ print("Нажмите 'q' для выхода")
 metadata_printed = False
 while True:
     try:
-        response = requests.get(f"http://{drone_ip}:7000/opt_camera", timeout=2)
+        response = requests.get(f"http://{drone_ip}:7000/thermal_absolute", timeout=2)
         if response.status_code == 200:
             data = response.json()
             img_data = base64.b64decode(data['image'])

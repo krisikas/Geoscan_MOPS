@@ -39,7 +39,7 @@ function Building({ basePoints = [], height = 10, color = "#444" }) {
   );
 }
 
-export default function RouteVisualizer({ coordinates = [], buildings = [], currentStep = 0, realTrajectory = [], droneFeed = null }) {
+export default function RouteVisualizer({ coordinates = [], buildings = [], currentStep = 0, realTrajectory = [], droneFeed = null, thermalFeed = null }) {
   // Convert coordinate objects {x,y,z} into an array of THREE.Vector3
   const points = useMemo(() => {
     if (!coordinates || coordinates.length === 0) return [];
@@ -186,28 +186,50 @@ export default function RouteVisualizer({ coordinates = [], buildings = [], curr
         <OrbitControls makeDefault enableDamping={false} />
       </Canvas>
       
-      {/* PIP Drone Camera Feed */}
-      {droneFeed && (
-          <div style={{
-              position: 'absolute',
-              bottom: '20px',
-              left: '20px',
-              width: '240px',
-              height: '160px',
-              borderRadius: '8px',
-              overflow: 'hidden',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-              backgroundColor: '#000',
-              pointerEvents: 'none',
-              zIndex: 10
-          }}>
-              <img 
-                  src={`data:image/jpeg;base64,${droneFeed}`} 
-                  alt="Drone Camera Feed" 
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-              />
-          </div>
-      )}
+      {/* PIP Camera Feeds */}
+      <div style={{
+          position: 'absolute',
+          bottom: '20px',
+          left: '20px',
+          display: 'flex',
+          gap: '20px',
+          zIndex: 10,
+          pointerEvents: 'none'
+      }}>
+          {droneFeed && (
+              <div style={{
+                  width: '240px',
+                  height: '160px',
+                  borderRadius: '8px',
+                  overflow: 'hidden',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                  backgroundColor: '#000',
+              }}>
+                  <img 
+                      src={`data:image/jpeg;base64,${droneFeed}`} 
+                      alt="Drone Camera Feed" 
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                  />
+              </div>
+          )}
+
+          {thermalFeed && (
+              <div style={{
+                  width: '240px',
+                  height: '160px',
+                  borderRadius: '8px',
+                  overflow: 'hidden',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                  backgroundColor: '#000',
+              }}>
+                  <img 
+                      src={`data:image/jpeg;base64,${thermalFeed}`} 
+                      alt="Thermal Camera Feed" 
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                  />
+              </div>
+          )}
+      </div>
 
       {!hasRoute && (
         <div style={{ 
