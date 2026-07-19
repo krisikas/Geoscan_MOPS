@@ -437,6 +437,47 @@ def start_flight(project_id: int, request: Request, db: Session = Depends(get_db
     # Actually, we need coordinates. Let's make a Pydantic model for it.
     pass
 
+from pydantic import BaseModel
+class PhotoUpload(BaseModel):
+    image: str
+
+@router.post("/{project_id}/upload_photo")
+async def upload_photo(project_id: int, payload: PhotoUpload, current_user: User = Depends(get_current_user)):
+    import os
+    import base64
+    import time
+    
+    # Save the base64 image to backend/data/projects/{project_id}/metashape_input
+    metashape_dir = os.path.join(os.getcwd(), "data", "projects", str(project_id), "metashape_input")
+    os.makedirs(metashape_dir, exist_ok=True)
+    
+    img_data = base64.b64decode(payload.image)
+    filename = f"frame_{int(time.time()*1000)}.jpg"
+    filepath = os.path.join(metashape_dir, filename)
+    
+    # To not block the event loop, we can use a thread or just write synchronously for small files
+    with open(filepath, "wb") as f:
+        f.write(img_data)
+        
+    return {"status": "success"}
+
+@router.delete("/{project_id}/photos")
+async def clear_photos(project_id: int, current_user: User = Depends(get_current_user)):
+    import os
+    import shutil
+    metashape_dir = os.path.join(os.getcwd(), "data", "projects", str(project_id), "metashape_input")
+    if os.path.exists(metashape_dir):
+        for filename in os.listdir(metashape_dir):
+            file_path = os.path.join(metashape_dir, filename)
+            try:
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+            except Exception as e:
+                pass
+    return {"status": "success"}
+
 from fastapi import WebSocket, WebSocketDisconnect
 
 @router.websocket("/{project_id}/stream_flight")

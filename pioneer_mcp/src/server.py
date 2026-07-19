@@ -216,14 +216,14 @@ async def get_flight_state() -> str:
     return _r.res_flight_state()
 
 @mcp.tool()
-async def start_photogrammetry(project_id: str) -> str:
-    """Начать непрерывный сбор фотограмметрии. Кадры будут сохраняться в датасет для указанного проекта."""
-    return await _r.cmd_start_photogrammetry(project_id)
+async def pause_photogrammetry() -> str:
+    """Остановить фоновый сбор фотограмметрии."""
+    return await _r.cmd_pause_photogrammetry()
 
 @mcp.tool()
-async def stop_photogrammetry() -> str:
-    """Остановить фоновый сбор фотограмметрии."""
-    return await _r.cmd_stop_photogrammetry()
+async def resume_photogrammetry() -> str:
+    """Возобновить фоновый сбор фотограмметрии."""
+    return await _r.cmd_resume_photogrammetry()
 
 
 # --- resources ---
