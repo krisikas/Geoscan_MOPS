@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Line, Grid, Text, Billboard, Edges } from '@react-three/drei';
+import { OrbitControls, Line, Grid, Text, Billboard, Edges, Html } from '@react-three/drei';
 import * as THREE from 'three';
 
 // Component to draw a custom polygonal building
@@ -39,7 +39,7 @@ function Building({ basePoints = [], height = 10, color = "#444" }) {
   );
 }
 
-export default function RouteVisualizer({ coordinates = [], buildings = [], currentStep = 0, realTrajectory = [] }) {
+export default function RouteVisualizer({ coordinates = [], buildings = [], currentStep = 0, realTrajectory = [], droneFeed = null }) {
   // Convert coordinate objects {x,y,z} into an array of THREE.Vector3
   const points = useMemo(() => {
     if (!coordinates || coordinates.length === 0) return [];
@@ -179,6 +179,31 @@ export default function RouteVisualizer({ coordinates = [], buildings = [], curr
                 />
             )}
           </group>
+        )}
+
+        {/* PIP Drone Camera Feed */}
+        {droneFeed && (
+            <Html fullscreen>
+                <div style={{
+                    position: 'absolute',
+                    bottom: '20px',
+                    left: '20px',
+                    width: '240px',
+                    height: '160px',
+                    borderRadius: '8px',
+                    overflow: 'hidden',
+                    border: '3px solid #3b82f6',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                    backgroundColor: '#000',
+                    pointerEvents: 'none'
+                }}>
+                    <img 
+                        src={`data:image/jpeg;base64,${droneFeed}`} 
+                        alt="Drone Camera Feed" 
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                    />
+                </div>
+            </Html>
         )}
 
         {/* Disable damping to remove the inertial/accelerated camera rotation */}

@@ -453,12 +453,18 @@ class DroneRuntime:
         if not self.__conn or not self.__streamer:
             return None
 
-        # Ставим на паузу фотограмметрию в telemetry_service
+        was_paused = True
         try:
             async with aiohttp.ClientSession() as session:
-                await session.post("http://localhost:8002/photogrammetry/pause", timeout=2)
+                async with session.get("http://localhost:8002/photogrammetry/status", timeout=2) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        was_paused = data.get("is_paused", True)
+                
+                if not was_paused:
+                    await session.post("http://localhost:8002/photogrammetry/pause", timeout=2)
         except Exception as e:
-            _lg.warning(f"Failed to pause photogrammetry: {e}")
+            _lg.warning(f"Failed to handle photogrammetry pause: {e}")
 
         angles = [30, 0, -40, -80]
         frames = []
@@ -494,12 +500,12 @@ class DroneRuntime:
         # Возвращаем камеру в базовое положение
         await self.cmd_set_camera_angle(-20)
 
-        # Возобновляем фотограмметрию
-        try:
-            async with aiohttp.ClientSession() as session:
-                await session.post("http://localhost:8002/photogrammetry/resume", timeout=2)
-        except Exception as e:
-            _lg.warning(f"Failed to resume photogrammetry: {e}")
+        if not was_paused:
+            try:
+                async with aiohttp.ClientSession() as session:
+                    await session.post("http://localhost:8002/photogrammetry/resume", timeout=2)
+            except Exception as e:
+                _lg.warning(f"Failed to resume photogrammetry: {e}")
 
         return buffer.tobytes()
 
@@ -640,44 +646,28 @@ class DroneRuntime:
 
     # ---- фотограмметрия (управление) ----
 
-    async def cmd_start_photogrammetry(self, project_id: str) -> str:
-        if not self.__conn:
-            return self.__err("Дрон не подключён")
+    async def cmd_pause_photogrammetry(self) -> str:
         try:
-            drone_ip = self.__DEFAULT_TCP.split(':')[0]
-            url = f"http://localhost:8002/photogrammetry/start"
-            params = {"project_id": project_id, "ip": drone_ip}
-            
+            url = f"http://localhost:8002/photogrammetry/pause"
             async with aiohttp.ClientSession() as session:
-                async with session.post(url, params=params, timeout=5) as response:
-                    response_text = await response.text()
-                    try:
-                        response_data = json.loads(response_text)
-                    except Exception:
-                        response_data = {}
-                    
+                async with session.post(url, timeout=5) as response:
+                    response_data = await response.json()
                     if response.status == 200 and response_data.get("status") == "success":
-                        return self.__ok(f"Сбор фотограмметрии начат для проекта {project_id}")
+                        return self.__ok("Сбор фотограмметрии приостановлен")
                     else:
                         error_msg = response_data.get("message", "Неизвестная ошибка")
                         return self.__err(f"Ошибка сервера {response.status}: {error_msg}")
         except Exception as ex:
             return self.__err(f"Ошибка HTTP запроса: {str(ex)}")
 
-    async def cmd_stop_photogrammetry(self) -> str:
+    async def cmd_resume_photogrammetry(self) -> str:
         try:
-            url = f"http://localhost:8002/photogrammetry/stop"
-            
+            url = f"http://localhost:8002/photogrammetry/resume"
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, timeout=5) as response:
-                    response_text = await response.text()
-                    try:
-                        response_data = json.loads(response_text)
-                    except Exception:
-                        response_data = {}
-                    
+                    response_data = await response.json()
                     if response.status == 200 and response_data.get("status") == "success":
-                        return self.__ok("Сбор фотограмметрии остановлен")
+                        return self.__ok("Сбор фотограмметрии возобновлен")
                     else:
                         error_msg = response_data.get("message", "Неизвестная ошибка")
                         return self.__err(f"Ошибка сервера {response.status}: {error_msg}")
