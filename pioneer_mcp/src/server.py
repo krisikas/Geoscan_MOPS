@@ -91,33 +91,6 @@ async def set_yaw(angle_deg: float) -> str:
     """Установить угол рыскания дрона."""
     return await _r.cmd_set_yaw(angle_deg)
 
-# # --- периферия ---
-
-# @mcp.tool()
-# async def led_control(r: float, g: float, b: float, led_id: int = 255) -> str:
-#     """Управление светодиодами дрона."""
-#     return await _r.cmd_led(r, g, b, led_id)
-
-# @mcp.tool()
-# async def grab_open() -> str:
-#     """Открыть захват дрона."""
-#     return await _r.cmd_grab_open()
-
-# @mcp.tool()
-# async def grab_close() -> str:
-#     """Закрыть захват дрона."""
-#     return await _r.cmd_grab_close()
-
-# @mcp.tool()
-# async def cargo_grab() -> str:
-#     """Включить магнитный захват груза."""
-#     return await _r.cmd_cargo_grab()
-
-# @mcp.tool()
-# async def cargo_release() -> str:
-#     """Выключить магнитный захват груза."""
-#     return await _r.cmd_cargo_release()
-
 # --- камера ---
 
 @mcp.tool()
@@ -207,17 +180,13 @@ async def get_multiframe() -> Image:
         
     return Image(data=data, format="jpeg")
 
-# --- сервопривод / reboot ---
+# --- сервопривод ---
 
 @mcp.tool()
 async def set_camera_angle(angle: float) -> str:
     """Установить угол наклона камеры (-80..+30 градусов). Приоритет: HIGH, MEDIUM, LOW."""
     return await _r.cmd_set_camera_angle(angle)
 
-# @mcp.tool()
-# async def reboot_board() -> str:
-#     """Перезагрузить плату автопилота дрона."""
-#     return await _r.cmd_reboot()
 
 # --- tool-обёртки для ресурсов ---
 
