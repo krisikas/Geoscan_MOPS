@@ -442,7 +442,7 @@ class PhotoUpload(BaseModel):
     image: str
 
 @router.post("/{project_id}/upload_photo")
-async def upload_photo(project_id: int, payload: PhotoUpload, current_user: User = Depends(get_current_user)):
+def upload_photo(project_id: int, payload: PhotoUpload, current_user: User = Depends(get_current_user)):
     import os
     import base64
     import time

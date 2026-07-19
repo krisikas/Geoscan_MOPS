@@ -76,7 +76,7 @@ export default function RouteVisualizer({ coordinates = [], buildings = [], curr
   }, [points, buildings]);
 
   return (
-    <div style={{ width: '100%', height: '100%', background: '#050505', borderRadius: '24px', overflow: 'hidden' }}>
+    <div style={{ position: 'relative', width: '100%', height: '100%', background: '#050505', borderRadius: '24px', overflow: 'hidden' }}>
       <Canvas camera={{ position: [15, 15, 15], fov: 50 }}>
         <color attach="background" args={['#050505']} />
         
@@ -181,35 +181,33 @@ export default function RouteVisualizer({ coordinates = [], buildings = [], curr
           </group>
         )}
 
-        {/* PIP Drone Camera Feed */}
-        {droneFeed && (
-            <Html fullscreen>
-                <div style={{
-                    position: 'absolute',
-                    bottom: '20px',
-                    left: '20px',
-                    width: '240px',
-                    height: '160px',
-                    borderRadius: '8px',
-                    overflow: 'hidden',
-                    border: '3px solid #3b82f6',
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-                    backgroundColor: '#000',
-                    pointerEvents: 'none'
-                }}>
-                    <img 
-                        src={`data:image/jpeg;base64,${droneFeed}`} 
-                        alt="Drone Camera Feed" 
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                    />
-                </div>
-            </Html>
-        )}
-
         {/* Disable damping to remove the inertial/accelerated camera rotation */}
         <OrbitControls makeDefault enableDamping={false} />
       </Canvas>
       
+      {/* PIP Drone Camera Feed */}
+      {droneFeed && (
+          <div style={{
+              position: 'absolute',
+              bottom: '20px',
+              left: '20px',
+              width: '240px',
+              height: '160px',
+              borderRadius: '8px',
+              overflow: 'hidden',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+              backgroundColor: '#000',
+              pointerEvents: 'none',
+              zIndex: 10
+          }}>
+              <img 
+                  src={`data:image/jpeg;base64,${droneFeed}`} 
+                  alt="Drone Camera Feed" 
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+              />
+          </div>
+      )}
+
       {!hasRoute && (
         <div style={{ 
           position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, 
