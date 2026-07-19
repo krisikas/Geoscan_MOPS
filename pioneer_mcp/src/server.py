@@ -57,19 +57,21 @@ async def emergency_land() -> str:
 # --- навигация ---
 
 @mcp.tool()
-async def go_to_local_point(x: float, y: float, z: float, yaw: float | None = None, speed: float = 0.6) -> str:
+async def go_to_local_point(x: float, y: float, z: float, yaw: float | None = None, speed: float = 0.6, camera_angle: float | None = None) -> str:
     """
     Отправить дрон к локальной точке. Максимальная высота 10м.
     Параметр speed задает скорость перемещения. Стандартная безопасная скорость это 0.6 м/с.
+    Если указан camera_angle, перед полётом дрон наклонит камеру на этот угол (-80..+30).
     """
-    return await _r.cmd_go_to_local_point(x, y, z, yaw, speed)
+    return await _r.cmd_go_to_local_point(x, y, z, yaw, speed, camera_angle)
 
 @mcp.tool()
-async def go_to_local_point_relative(dx: float, dy: float, dz: float, dyaw: float | None = None, speed: float = 0.6) -> str:
+async def go_to_local_point_relative(dx: float, dy: float, dz: float, dyaw: float | None = None, speed: float = 0.6, camera_angle: float | None = None) -> str:
     """
     Отправить дрон к точке относительно его текущего положения и направления.
+    Если указан camera_angle, перед полётом дрон наклонит камеру на этот угол (-80..+30).
     """
-    return await _r.cmd_go_to_local_point_relative(dx, dy, dz, dyaw, speed)
+    return await _r.cmd_go_to_local_point_relative(dx, dy, dz, dyaw, speed, camera_angle)
 
 @mcp.tool()
 async def set_velocity(vx: float, vy: float, vz: float, yaw_rate: float) -> str:

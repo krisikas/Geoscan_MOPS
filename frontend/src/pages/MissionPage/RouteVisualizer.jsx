@@ -128,8 +128,9 @@ export default function RouteVisualizer({ coordinates = [], buildings = [], curr
                       color="#aaaaaa"
                       anchorX="center"
                       anchorY="middle"
+                      textAlign="center"
                     >
-                      ({coordinates[idx].x.toFixed(1)}, {coordinates[idx].y.toFixed(1)}, {coordinates[idx].z.toFixed(1)})
+                      {`(${coordinates[idx].x.toFixed(1)}, ${coordinates[idx].y.toFixed(1)}, ${coordinates[idx].z.toFixed(1)})\nYaw: ${coordinates[idx].yaw ?? 0}°, Cam Angle: ${coordinates[idx].camera_angle ?? 0}°`}
                     </Text>
                 </Billboard>
               </group>

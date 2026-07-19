@@ -10,25 +10,31 @@ TELEMETRY_PID=""
 cleanup() {
     echo -e "\nEnding..."
     
-    if [ -n "$MCP_PID" ]; then
-        echo "Stopping MCP service..."
-        kill -- -$MCP_PID 2>/dev/null
-    fi
-
-    if [ -n "$AI_PID" ]; then
-        echo "Stopping AI service..."
-        kill -- -$AI_PID 2>/dev/null
-    fi
+    echo "Sending graceful shutdown to services..."
+    # MCP (no port)
+    pkill -15 -f "pioneer_mcp/src" 2>/dev/null
     
-    if [ -n "$BACKEND_PID" ]; then
-        echo "Stopping backend service..."
-        kill -- -$BACKEND_PID 2>/dev/null
-    fi
-
-    if [ -n "$TELEMETRY_PID" ]; then
-        echo "Stopping telemetry service..."
-        kill -- -$TELEMETRY_PID 2>/dev/null
-    fi
+    # Find and kill by port
+    for port in 8000 8001 8002 9090; do
+        pids=$(lsof -t -i:$port 2>/dev/null)
+        if [ -n "$pids" ]; then
+            echo "Stopping processes on port $port: $pids"
+            kill -15 $pids 2>/dev/null
+        fi
+    done
+    
+    echo "Waiting 3 seconds for graceful shutdown (to avoid DB errors)..."
+    sleep 3
+    
+    echo "Force killing any remaining processes..."
+    pkill -9 -f "pioneer_mcp/src" 2>/dev/null
+    for port in 8000 8001 8002 9090; do
+        pids=$(lsof -t -i:$port 2>/dev/null)
+        if [ -n "$pids" ]; then
+            echo "Force killing port $port: $pids"
+            kill -9 $pids 2>/dev/null
+        fi
+    done
     
     cd "$ROOT_DIR" || exit
     

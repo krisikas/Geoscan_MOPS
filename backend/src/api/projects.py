@@ -514,15 +514,14 @@ async def stream_flight(websocket: WebSocket, project_id: int, ip: str = "127.0.
                 async def keep_alive_front():
                     try:
                         while True:
-                            try:
-                                msg = await websocket.receive_json()
-                                if msg.get("action") == "stop":
-                                    await ai_ws.close()
-                                    break
-                            except Exception:
-                                pass
+                            msg = await websocket.receive_json()
+                            if msg.get("action") == "stop":
+                                await ai_ws.close()
+                                break
                     except WebSocketDisconnect:
-                        pass
+                        await ai_ws.close()
+                    except Exception:
+                        await ai_ws.close()
                 
                 frontend_keep_alive = asyncio.create_task(keep_alive_front())
                 
