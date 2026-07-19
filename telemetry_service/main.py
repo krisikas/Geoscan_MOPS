@@ -70,29 +70,60 @@ async def emergency_stop(ip: str = Query(..., description="IP адрес дро�
 
 async def fetch_telemetry_loop(websocket: WebSocket, ip: str):
     url = f"http://{ip}:8000/drone/position"
-    async with aiohttp.ClientSession() as session:
-        while True:
+    tcp_address = f"{ip}:20556"
+    p = None
+
+    try:
+        # Подключаемся к дрону для получения ориентации
+        p = await asyncio.to_thread(Pioneer, tcp=tcp_address)
+    except (Exception, SystemExit) as e:
+        print(f"Failed to connect Pioneer SDK for orientation: {e}")
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            while True:
+                try:
+                    pos = None
+                    # Получаем позицию
+                    try:
+                        async with session.get(url, timeout=1.0) as response:
+                            if response.status == 200:
+                                data = await response.json()
+                                if data.get("status") == "success":
+                                    pos = data.get("position")
+                    except Exception:
+                        pass
+                    
+                    # Получаем ориентацию
+                    yaw = 0
+                    if p is not None:
+                        try:
+                            o = p.get_orientation()
+                            if o is not None:
+                                yaw = o[2]
+                        except Exception:
+                            pass
+                    
+                    if pos:
+                        await websocket.send_json({
+                            "type": "telemetry",
+                            "x": pos[0],
+                            "y": pos[1],
+                            "z": pos[2],
+                            "yaw": yaw
+                        })
+                    
+                    await asyncio.sleep(0.05)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    await asyncio.sleep(2.0)
+    finally:
+        if p is not None:
             try:
-                async with session.get(url, timeout=1.0) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        if data.get("status") == "success":
-                            pos = data.get("position")
-                            if pos:
-                                await websocket.send_json({
-                                    "type": "telemetry",
-                                    "x": pos[0],
-                                    "y": pos[1],
-                                    "z": pos[2],
-                                    "yaw": data.get("orientation", [0, 0, 0])[2] if "orientation" in data else 0 
-                                })
-                        await asyncio.sleep(0.05)
-                    else:
-                        # Если 404 или другая ошибка, спим дольше чтобы не спамить
-                        await asyncio.sleep(2.0)
-            except Exception as e:
-                # Тишина при ошибках телеметрии (дрон выключен, плохая связь)
-                await asyncio.sleep(2.0)
+                p.close_connection()
+            except Exception:
+                pass
 
 
 async def fetch_photo_loop(ip: str, project_id: str, websocket: WebSocket, cookies: dict):

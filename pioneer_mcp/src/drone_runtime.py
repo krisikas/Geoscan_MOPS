@@ -100,6 +100,7 @@ class DroneRuntime:
             cls._instance.__srv = None
             cls._instance.__iv = None
             cls._instance.__streamer = None
+            cls._instance.__http_session = None
         return cls._instance
 
     # ---- internal helpers (mangled) ----
@@ -155,6 +156,11 @@ class DroneRuntime:
         return self.__p.get_fly_state().name
 
 
+    async def _get_session(self) -> aiohttp.ClientSession:
+        if self.__http_session is None or self.__http_session.closed:
+            self.__http_session = aiohttp.ClientSession()
+        return self.__http_session
+
     @property
     def connected(self) -> bool:
         return self.__conn
@@ -188,6 +194,9 @@ class DroneRuntime:
         if e:
             return e
         self.__stop_cam()
+        if self.__http_session and not self.__http_session.closed:
+            await self.__http_session.close()
+            self.__http_session = None
         if self.__iv is not None:
             try:
                 self.__iv.close()
@@ -290,11 +299,11 @@ class DroneRuntime:
             drone_ip = self.__DEFAULT_TCP.split(':')[0]
             url = f"http://{drone_ip}:8000/drone/position"
             try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(url, timeout=5) as response:
-                        resp_data = await response.json()
-                        if resp_data.get("status") == "success":
-                            lp = resp_data.get("position")
+                session = await self._get_session()
+                async with session.get(url, timeout=5) as response:
+                    resp_data = await response.json()
+                    if resp_data.get("status") == "success":
+                        lp = resp_data.get("position")
             except Exception:
                 pass
             
@@ -326,11 +335,11 @@ class DroneRuntime:
             drone_ip = self.__DEFAULT_TCP.split(':')[0]
             url = f"http://{drone_ip}:8000/drone/position"
             
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=5) as response:
-                    resp_data = await response.json()
-                    if resp_data.get("status") == "success":
-                        lp = resp_data.get("position")
+            session = await self._get_session()
+            async with session.get(url, timeout=5) as response:
+                resp_data = await response.json()
+                if resp_data.get("status") == "success":
+                    lp = resp_data.get("position")
         except Exception as ex:
             self.__hexc(ex)
             return self.__err(f"Ошибка получения телеметрии по HTTP: {ex}")
@@ -360,7 +369,6 @@ class DroneRuntime:
         try:
             self.__p.go_to_local_point(target_x, target_y, target_z, target_yaw, time=flight_time)
 
-            # Заменяем блокирующий цикл на асинхронный
             while not self.__p.point_reached():
                 await asyncio.sleep(0.1)
 
@@ -455,14 +463,14 @@ class DroneRuntime:
 
         was_paused = True
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get("http://localhost:8002/photogrammetry/status", timeout=2) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        was_paused = data.get("is_paused", True)
-                
-                if not was_paused:
-                    await session.post("http://localhost:8002/photogrammetry/pause", timeout=2)
+            session = await self._get_session()
+            async with session.get("http://localhost:8002/photogrammetry/status", timeout=2) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    was_paused = data.get("is_paused", True)
+            
+            if not was_paused:
+                await session.post("http://localhost:8002/photogrammetry/pause", timeout=2)
         except Exception as e:
             _lg.warning(f"Failed to handle photogrammetry pause: {e}")
 
@@ -502,8 +510,8 @@ class DroneRuntime:
 
         if not was_paused:
             try:
-                async with aiohttp.ClientSession() as session:
-                    await session.post("http://localhost:8002/photogrammetry/resume", timeout=2)
+                session = await self._get_session()
+                await session.post("http://localhost:8002/photogrammetry/resume", timeout=2)
             except Exception as e:
                 _lg.warning(f"Failed to resume photogrammetry: {e}")
 
@@ -520,16 +528,16 @@ class DroneRuntime:
             # На всякий случай проверяем/кастим в int для нашего сервера
             params = {'angle': int(angle)}
             
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params, timeout=3) as response:
-                    response_text = await response.text()
-                    response_data = json.loads(response_text)
-                    
-                    if response.status == 200:
-                        return self.__ok(f"Угол камеры установлен: {angle}°", {"angle": angle})
-                    else:
-                        error_msg = response_data.get("message", "Неизвестная ошибка")
-                        return self.__err(f"Ошибка сервера {response.status}: {error_msg}")
+            session = await self._get_session()
+            async with session.get(url, params=params, timeout=3) as response:
+                response_text = await response.text()
+                response_data = json.loads(response_text)
+                
+                if response.status == 200:
+                    return self.__ok(f"Угол камеры установлен: {angle}°", {"angle": angle})
+                else:
+                    error_msg = response_data.get("message", "Неизвестная ошибка")
+                    return self.__err(f"Ошибка сервера {response.status}: {error_msg}")
 
         except ValueError as ex:
             return self.__err(f"Ошибка валидации: {str(ex)}")
@@ -569,7 +577,7 @@ class DroneRuntime:
                 
                 # Делаем синхронный запрос с небольшим таймаутом, чтобы не повесить программу
                 req = urllib.request.Request(url)
-                with urllib.request.urlopen(req, timeout=5) as response:
+                with urllib.request.urlopen(req, timeout=0.2) as response:
                     # У urllib не-200 статусы вызывают исключение HTTPError, 
                     # поэтому сюда мы попадаем только если всё ок (200)
                     resp_data = json.loads(response.read().decode('utf-8'))
@@ -649,27 +657,27 @@ class DroneRuntime:
     async def cmd_pause_photogrammetry(self) -> str:
         try:
             url = f"http://localhost:8002/photogrammetry/pause"
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, timeout=5) as response:
-                    response_data = await response.json()
-                    if response.status == 200 and response_data.get("status") == "success":
-                        return self.__ok("Сбор фотограмметрии приостановлен")
-                    else:
-                        error_msg = response_data.get("message", "Неизвестная ошибка")
-                        return self.__err(f"Ошибка сервера {response.status}: {error_msg}")
+            session = await self._get_session()
+            async with session.post(url, timeout=5) as response:
+                response_data = await response.json()
+                if response.status == 200 and response_data.get("status") == "success":
+                    return self.__ok("Сбор фотограмметрии приостановлен")
+                else:
+                    error_msg = response_data.get("message", "Неизвестная ошибка")
+                    return self.__err(f"Ошибка сервера {response.status}: {error_msg}")
         except Exception as ex:
             return self.__err(f"Ошибка HTTP запроса: {str(ex)}")
 
     async def cmd_resume_photogrammetry(self) -> str:
         try:
             url = f"http://localhost:8002/photogrammetry/resume"
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, timeout=5) as response:
-                    response_data = await response.json()
-                    if response.status == 200 and response_data.get("status") == "success":
-                        return self.__ok("Сбор фотограмметрии возобновлен")
-                    else:
-                        error_msg = response_data.get("message", "Неизвестная ошибка")
-                        return self.__err(f"Ошибка сервера {response.status}: {error_msg}")
+            session = await self._get_session()
+            async with session.post(url, timeout=5) as response:
+                response_data = await response.json()
+                if response.status == 200 and response_data.get("status") == "success":
+                    return self.__ok("Сбор фотограмметрии возобновлен")
+                else:
+                    error_msg = response_data.get("message", "Неизвестная ошибка")
+                    return self.__err(f"Ошибка сервера {response.status}: {error_msg}")
         except Exception as ex:
             return self.__err(f"Ошибка HTTP запроса: {str(ex)}")
