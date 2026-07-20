@@ -59,9 +59,7 @@ async def emergency_stop(ip: str = Query(..., description="IP адрес дро�
             try:
                 p = Pioneer(tcp=tcp_address)
                 p.land()
-                time.sleep(0.5)
-                p.disarm()
-                p.close_connection()
+                # p.close_connection()
             except SystemExit:
                 raise RuntimeError("Pioneer SDK error: Connection refused (SystemExit)")
         
