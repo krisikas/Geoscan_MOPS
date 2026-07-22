@@ -26,6 +26,9 @@ class AgentResponse(BaseModel):
     content: Optional[str] = None
     tool: Optional[AgentToolCall] = None
 
+class ProcessAIRequest(BaseModel):
+    models: List[str] = ["yolo"]
+
 class Message(BaseModel):
     role: str
     text: str
@@ -36,7 +39,7 @@ class PlanRequest(BaseModel):
     current_route: Optional[Dict[str, Any]] = None
 
 router = APIRouter()
-processing_locks: Set[Tuple[int, str, str]] = set()
+processing_locks: Set[Tuple[int, str, str, str]] = set()
 
 PROJECTS_ROOT = "data/projects"
 
@@ -53,8 +56,11 @@ def set_project_status(project_id: int, db: Session, update_data: dict):
 
 def _ensure_project_dirs(project_id: int):
     base = os.path.join(PROJECTS_ROOT, str(project_id))
-    for sub in ("ai_input", "ai_output", "metashape_input", "metashape_project", "metashape_ai_output"):
+    for sub in ("ai_input", "metashape_input", "metashape_project"):
         os.makedirs(os.path.join(base, sub), exist_ok=True)
+    for model in ["yolo", "cracksam"]:
+        os.makedirs(os.path.join(base, f"ai_output_{model}"), exist_ok=True)
+        os.makedirs(os.path.join(base, f"metashape_ai_output_{model}"), exist_ok=True)
     return base
 
 def _get_images(folder: str) -> List[str]:
@@ -126,7 +132,16 @@ async def upload_photos(
     dest_dir = os.path.join(base, "ai_input" if group == "ai" else "metashape_input")
     
     if group == "metashape":
-        for d in [dest_dir, os.path.join(base, "metashape_project"), os.path.join(base, "metashape_ai_output")]:
+        for d in [dest_dir, os.path.join(base, "metashape_project")]:
+            if os.path.exists(d):
+                for f in os.listdir(d):
+                    fp = os.path.join(d, f)
+                    if os.path.isdir(fp):
+                        shutil.rmtree(fp)
+                    else:
+                        os.remove(fp)
+        for model in ["yolo", "cracksam"]:
+            d = os.path.join(base, f"metashape_ai_output_{model}")
             if os.path.exists(d):
                 for f in os.listdir(d):
                     fp = os.path.join(d, f)
@@ -161,15 +176,17 @@ def list_images(project_id: int, db: Session = Depends(get_db), current_user: Us
         raise HTTPException(status_code=404, detail="Project not found")
         
     base = _ensure_project_dirs(project.id)
-    ai_proc = [fname for (pid, grp, fname) in processing_locks if pid == project.id and grp == "ai_input"]
-    meta_proc = [fname for (pid, grp, fname) in processing_locks if pid == project.id and grp == "metashape_input"]
+    ai_proc = [fname for (pid, grp, fname, model) in processing_locks if pid == project.id and grp == "ai_input"]
+    meta_proc = [fname for (pid, grp, fname, model) in processing_locks if pid == project.id and grp == "metashape_input"]
 
     return {
         "ai_input": _get_images(os.path.join(base, "ai_input")),
-        "ai_output": _get_images(os.path.join(base, "ai_output")),
+        "ai_output_yolo": _get_images(os.path.join(base, "ai_output_yolo")),
+        "ai_output_cracksam": _get_images(os.path.join(base, "ai_output_cracksam")),
         "metashape_input": _get_images(os.path.join(base, "metashape_input")),
         "metashape_project": _get_images(os.path.join(base, "metashape_project")),
-        "metashape_ai_output": _get_images(os.path.join(base, "metashape_ai_output")),
+        "metashape_ai_output_yolo": _get_images(os.path.join(base, "metashape_ai_output_yolo")),
+        "metashape_ai_output_cracksam": _get_images(os.path.join(base, "metashape_ai_output_cracksam")),
         "thermal_input": _get_images(os.path.join(base, "thermal_input")),
         "processing_ai": ai_proc,
         "processing_metashape": meta_proc
@@ -181,7 +198,7 @@ def get_image(project_id: int, group: str, filename: str, db: Session = Depends(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
         
-    if group not in ["ai_input", "ai_output", "metashape_input", "metashape_project", "metashape_ai_output", "thermal_input"]:
+    if group not in ["ai_input", "metashape_input", "metashape_project", "thermal_input", "ai_output_yolo", "ai_output_cracksam", "metashape_ai_output_yolo", "metashape_ai_output_cracksam"]:
         raise HTTPException(status_code=400, detail="Invalid group")
         
     file_path = os.path.join(PROJECTS_ROOT, str(project.id), group, filename)
@@ -192,7 +209,7 @@ def get_image(project_id: int, group: str, filename: str, db: Session = Depends(
 
 @router.delete("/{project_id}/images/{group}/{filename}")
 def delete_image(project_id: int, group: str, filename: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    if group not in ["ai_input", "ai_output", "metashape_input", "metashape_project", "metashape_ai_output", "thermal_input"]:
+    if group not in ["ai_input", "metashape_input", "metashape_project", "thermal_input", "ai_output_yolo", "ai_output_cracksam", "metashape_ai_output_yolo", "metashape_ai_output_cracksam"]:
         raise HTTPException(status_code=400, detail="Invalid group")
     project = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
     if not project:
@@ -209,32 +226,30 @@ def delete_image(project_id: int, group: str, filename: str, db: Session = Depen
     # Delete matching AI output images and data coordinates txt files
     base_name, _ = os.path.splitext(filename)
     if group == "ai_input":
-        out_img = os.path.join(base_dir, "ai_output", filename)
-        if os.path.exists(out_img):
-            os.remove(out_img)
-        out_txt = os.path.join(base_dir, "ai_output", f"{base_name}_data.txt")
-        if os.path.exists(out_txt):
-            os.remove(out_txt)
+        for model in ["yolo", "cracksam"]:
+            out_img = os.path.join(base_dir, f"ai_output_{model}", filename)
+            if os.path.exists(out_img):
+                os.remove(out_img)
+            out_txt = os.path.join(base_dir, f"ai_output_{model}", f"{base_name}_data.txt")
+            if os.path.exists(out_txt):
+                os.remove(out_txt)
     elif group == "metashape_input":
-        out_img = os.path.join(base_dir, "metashape_ai_output", filename)
-        if os.path.exists(out_img):
-            os.remove(out_img)
-        out_txt = os.path.join(base_dir, "metashape_ai_output", f"{base_name}_data.txt")
-        if os.path.exists(out_txt):
-            os.remove(out_txt)
-    elif group == "ai_output":
-        out_txt = os.path.join(base_dir, "ai_output", f"{base_name}_data.txt")
-        if os.path.exists(out_txt):
-            os.remove(out_txt)
-    elif group == "metashape_ai_output":
-        out_txt = os.path.join(base_dir, "metashape_ai_output", f"{base_name}_data.txt")
+        for model in ["yolo", "cracksam"]:
+            out_img = os.path.join(base_dir, f"metashape_ai_output_{model}", filename)
+            if os.path.exists(out_img):
+                os.remove(out_img)
+            out_txt = os.path.join(base_dir, f"metashape_ai_output_{model}", f"{base_name}_data.txt")
+            if os.path.exists(out_txt):
+                os.remove(out_txt)
+    elif group in ["ai_output_yolo", "ai_output_cracksam", "metashape_ai_output_yolo", "metashape_ai_output_cracksam"]:
+        out_txt = os.path.join(base_dir, group, f"{base_name}_data.txt")
         if os.path.exists(out_txt):
             os.remove(out_txt)
             
     return {"status": "deleted"}
 
 @router.post("/{project_id}/images/{group}/{filename}/process_ai")
-def process_single_image_ai(project_id: int, group: str, filename: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def process_single_image_ai(project_id: int, group: str, filename: str, background_tasks: BackgroundTasks, payload: ProcessAIRequest = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     if group not in ["ai_input", "metashape_input"]:
         raise HTTPException(status_code=400, detail="Single image processing is only allowed for input folders")
         
@@ -242,34 +257,40 @@ def process_single_image_ai(project_id: int, group: str, filename: str, backgrou
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
         
+    models_to_run = payload.models if payload else ["yolo"]
+    
+    current_models = project.ai_models or []
+    new_models = list(set(current_models + models_to_run))
+    if set(new_models) != set(current_models):
+        project.ai_models = new_models
+        db.commit()
+
     base = os.path.join(PROJECTS_ROOT, str(project.id))
     input_dir = os.path.join(base, group)
-    
-    if group == "ai_input":
-        output_dir = os.path.join(base, "ai_output")
-    else:
-        output_dir = os.path.join(base, "metashape_ai_output")
     
     if not os.path.exists(os.path.join(input_dir, filename)):
          raise HTTPException(status_code=404, detail="Image not found")
          
-    lock_key = (project.id, group, filename)
-    if lock_key in processing_locks:
-        while lock_key in processing_locks:
-            time.sleep(0.5)
-        return {"status": "done"}
+    for model in models_to_run:
+        output_dir = os.path.join(base, f"ai_output_{model}" if group == "ai_input" else f"metashape_ai_output_{model}")
         
-    processing_locks.add(lock_key)
-    try:
-        from src.services.ai import process_ai_image
-        process_ai_image(os.path.join(input_dir, filename), os.path.join(output_dir, filename))
-    except Exception as e:
+        lock_key = (project.id, group, filename, model)
         if lock_key in processing_locks:
-            processing_locks.remove(lock_key)
-        raise HTTPException(status_code=500, detail=f"Ошибка обработки ИИ: {str(e)}")
-    finally:
-        if lock_key in processing_locks:
-            processing_locks.remove(lock_key)
+            continue
+            
+        processing_locks.add(lock_key)
+        try:
+            from src.services.ai import process_ai_image
+            base_name, _ = os.path.splitext(filename)
+            out_filename = base_name + ".png"
+            process_ai_image(os.path.join(input_dir, filename), os.path.join(output_dir, out_filename), model=model)
+        except Exception as e:
+            if lock_key in processing_locks:
+                processing_locks.remove(lock_key)
+            print(f"Ошибка обработки ИИ ({model}): {str(e)}")
+        finally:
+            if lock_key in processing_locks:
+                processing_locks.remove(lock_key)
         
     return {"status": "done"}
 
@@ -280,6 +301,7 @@ def get_project_status(project_id: int, db: Session = Depends(get_db), current_u
         raise HTTPException(status_code=404, detail="Project not found")
     return {
         "ai": project.ai_status,
+        "ai_models": project.ai_models or [],
         "metashape": project.metashape_status,
         "error": project.error_message
     }
@@ -298,6 +320,7 @@ async def get_project_status_stream(project_id: int, current_user: User = Depend
                 
                 current_state = {
                     "ai": project.ai_status,
+                    "ai_models": project.ai_models or [],
                     "metashape": project.metashape_status,
                     "error": project.error_message
                 }
@@ -313,14 +336,18 @@ async def get_project_status_stream(project_id: int, current_user: User = Depend
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
-def run_ai_task(project_id: int, input_dir: str, output_dir: str, images: List[str]):
+def run_ai_task(project_id: int, input_dir: str, base_output_dir: str, images: List[str], models: List[str]):
     db = SessionLocal()
     try:
         from src.services.ai import process_ai_image
         for img_name in images:
             in_path = os.path.join(input_dir, img_name)
-            out_path = os.path.join(output_dir, img_name)
-            process_ai_image(in_path, out_path)
+            base_name, _ = os.path.splitext(img_name)
+            out_filename = base_name + ".png"
+            for model in models:
+                out_path = os.path.join(base_output_dir + f"_{model}", out_filename)
+                if not os.path.exists(out_path):
+                    process_ai_image(in_path, out_path, model=model)
         set_project_status(project_id, db, {"ai_status": "done"})
     except Exception as e:
         set_project_status(project_id, db, {"ai_status": "error", "error_message": f"Ошибка ИИ: {str(e)}"})
@@ -328,14 +355,22 @@ def run_ai_task(project_id: int, input_dir: str, output_dir: str, images: List[s
         db.close()
 
 @router.post("/{project_id}/process/ai")
-def process_ai(project_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def process_ai(project_id: int, background_tasks: BackgroundTasks, payload: ProcessAIRequest = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     project = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
         
+    models_to_run = payload.models if payload else ["yolo"]
+    
+    current_models = project.ai_models or []
+    new_models = list(set(current_models + models_to_run))
+    if set(new_models) != set(current_models):
+        project.ai_models = new_models
+        db.commit()
+        
     base = _ensure_project_dirs(project.id)
     input_dir = os.path.join(base, "ai_input")
-    output_dir = os.path.join(base, "ai_output")
+    output_base_dir = os.path.join(base, "ai_output")
     
     images = _get_images(input_dir)
     if not images:
@@ -347,7 +382,7 @@ def process_ai(project_id: int, background_tasks: BackgroundTasks, db: Session =
         raise HTTPException(status_code=503, detail="Ошибка: Модуль ИИ не найден или не установлен. Проверьте зависимости.")
 
     set_project_status(project.id, db, {"ai_status": "processing", "error_message": None})
-    background_tasks.add_task(run_ai_task, project.id, input_dir, output_dir, images)
+    background_tasks.add_task(run_ai_task, project.id, input_dir, output_base_dir, images, models_to_run)
     return {"status": "started"}
 
 def run_metashape_task(project_id: int, input_dir: str, output_dir: str):

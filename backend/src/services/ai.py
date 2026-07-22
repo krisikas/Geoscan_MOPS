@@ -2,9 +2,11 @@ import cv2
 import numpy as np
 import os
 import torch
+import subprocess
+import tempfile
 from sahi import AutoDetectionModel
 from sahi.predict import get_sliced_prediction
-from typing import Optional
+from typing import Optional, Tuple
 
 _detection_model = None
 
@@ -13,6 +15,7 @@ def _find_model_path() -> str:
     if env_path and os.path.isfile(env_path):
         return env_path
     possible_paths = [
+        os.path.join(os.path.dirname(__file__), "..", "..", "weights", "yolo", "best.pt"),
         "best.pt",
         os.path.join(os.path.dirname(__file__), "best.pt"),
         os.path.join(os.path.dirname(__file__), "..", "best.pt"),
@@ -55,7 +58,8 @@ def _process_logic(image_path: str):
     cl = clahe.apply(l)
     limg = cv2.merge((cl, a, b))
     img_contrast = cv2.cvtColor(limg, cv2.COLOR_LAB2RGB)
-
+    
+    grouped_objects = {}
     model = _get_model()
 
     result = get_sliced_prediction(
@@ -99,7 +103,8 @@ def _process_logic(image_path: str):
 
     global_painted_mask = np.zeros(img_contrast.shape[:2], dtype=bool)
 
-    grouped_objects = {}
+    # Создаем прозрачный PNG с маской
+    mask_output = np.zeros((img_contrast.shape[0], img_contrast.shape[1], 4), dtype=np.uint8)
 
     for obj in valid_objects:
         mask = np.array(obj.mask.bool_mask, dtype=bool)
@@ -112,9 +117,7 @@ def _process_logic(image_path: str):
         class_name = obj.category.name
         color = colors.get(cls_id, (255, 255, 255))
         
-        colored_mask = np.zeros_like(img_masks_only)
-        colored_mask[valid_mask] = color
-        img_masks_only[valid_mask] = cv2.addWeighted(img_masks_only[valid_mask], 0.5, colored_mask[valid_mask], 0.5, 0)
+        mask_output[valid_mask] = [color[2], color[1], color[0], 75] 
         
         global_painted_mask |= valid_mask
 
@@ -124,8 +127,60 @@ def _process_logic(image_path: str):
             int(bbox.minx), int(bbox.miny), int(bbox.maxx), int(bbox.maxy)
         ])
 
-    img_masks_only_bgr = cv2.cvtColor(img_masks_only, cv2.COLOR_RGB2BGR)
-    return img_masks_only_bgr, grouped_objects
+    return mask_output, grouped_objects
+
+def _process_cracksam(image_path: str) -> Tuple[np.ndarray, dict]:
+    img = cv2.imread(image_path)
+    if img is None:
+        raise ValueError(f"Не удалось загрузить изображение: {image_path}")
+        
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_mask:
+        tmp_mask_path = tmp_mask.name
+
+    try:
+        import sys
+        src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        backend_dir = os.path.dirname(src_dir)
+        cracksam_cwd = os.path.join(src_dir, "cracksam")
+        ckpt_path = os.path.join(backend_dir, "weights", "cracksam", "CrackSAM_adapter_d32.pth")
+        sam_ckpt_path = os.path.join(backend_dir, "weights", "cracksam", "sam_vit_h_4b8939.pth")
+        
+        cmd = [
+            sys.executable, "predict_single.py",
+            "--image_path", os.path.abspath(image_path),
+            "--output_path", tmp_mask_path,
+            "--ckpt", sam_ckpt_path,
+            "--delta_ckpt", ckpt_path
+        ]
+        
+        # Add crackSAM dir to PYTHONPATH
+        env = os.environ.copy()
+        env["PYTHONPATH"] = cracksam_cwd + (":" + env.get("PYTHONPATH", "") if env.get("PYTHONPATH") else "")
+        
+        subprocess.run(cmd, cwd=cracksam_cwd, check=True, capture_output=True, env=env)
+        
+        mask = cv2.imread(tmp_mask_path, cv2.IMREAD_GRAYSCALE)
+        if mask is None:
+            raise RuntimeError("CrackSAM did not produce a mask")
+            
+        color = (0, 0, 255) # Red for cracks in BGR
+        valid_mask = mask > 127
+        
+        mask_output = np.zeros((img.shape[0], img.shape[1], 4), dtype=np.uint8)
+        mask_output[valid_mask] = [color[0], color[1], color[2], 75] # Set transparency to 75 to match YOLO
+
+        
+        grouped_objects = {}
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for cnt in contours:
+            x, y, w, h = cv2.boundingRect(cnt)
+            if w > 5 and h > 5:
+                grouped_objects.setdefault("crack", []).append([x, y, x+w, y+h])
+                
+        return mask_output, grouped_objects
+    finally:
+        if os.path.exists(tmp_mask_path):
+            os.remove(tmp_mask_path)
 
 def process_image(image_path: str) -> str:
     result_img, _ = _process_logic(image_path)
@@ -134,8 +189,14 @@ def process_image(image_path: str) -> str:
     cv2.imwrite(new_image_path, result_img)
     return new_image_path
 
-def process_ai_image(input_path: str, output_path: str) -> str:
-    result_img, grouped_objects = _process_logic(input_path)
+def process_ai_image(input_path: str, output_path: str, model: str = "yolo") -> str:
+    if model == "yolo":
+        result_img, grouped_objects = _process_logic(input_path)
+    elif model == "cracksam":
+        result_img, grouped_objects = _process_cracksam(input_path)
+    else:
+        raise ValueError(f"Unknown model: {model}")
+        
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     cv2.imwrite(output_path, result_img)
 

@@ -12,14 +12,18 @@ const ImageViewer = ({
   folderKey, 
   projectId, 
   objectUrls, 
-  startSingleProcess 
+  startSingleProcess,
+  aiModels = ['yolo']
 }) => {
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   
-  const [showDefects, setShowDefects] = useState(false);
+  const [showYolo, setShowYolo] = useState(false);
+  const [showCrackSam, setShowCrackSam] = useState(false);
+  const [isProcessingLocal, setIsProcessingLocal] = useState(false);
+  
   const [modelRotation, setModelRotation] = useState(-90); // Metashape Z-up fix
   
   const imageRef = useRef(null);
@@ -76,9 +80,33 @@ const ImageViewer = ({
     setPosition({ x: 0, y: 0 });
   };
 
+  const currentImg = images[currentIndex];
+  const is3DModel = currentImg ? (currentImg.toLowerCase().endsWith('.glb') || currentImg.toLowerCase().endsWith('.gltf')) : false;
+  const maskImgName = currentImg ? currentImg.replace(/\.[^/.]+$/, ".png") : "";
+  
+  const yoloFolder = folderKey === 'ai_input' ? 'ai_output_yolo' : 'metashape_ai_output_yolo';
+  const crackFolder = folderKey === 'ai_input' ? 'ai_output_cracksam' : 'metashape_ai_output_cracksam';
+
+  const hasYolo = currentImg ? globalImages[yoloFolder]?.includes(maskImgName) : false;
+  const hasCrack = currentImg ? globalImages[crackFolder]?.includes(maskImgName) : false;
+
   useEffect(() => {
     resetView();
-  }, [currentIndex, showDefects]);
+    setIsProcessingLocal(false);
+  }, [currentIndex]);
+
+  useEffect(() => {
+      if (!currentImg || is3DModel || isProcessingLocal) return;
+      
+      const modelsToRun = [];
+      if (showYolo && !hasYolo) modelsToRun.push('yolo');
+      if (showCrackSam && !hasCrack) modelsToRun.push('cracksam');
+      
+      if (modelsToRun.length > 0) {
+          setIsProcessingLocal(true);
+          startSingleProcess(currentImg, modelsToRun).finally(() => setIsProcessingLocal(false));
+      }
+  }, [currentIndex, showYolo, showCrackSam, hasYolo, hasCrack, is3DModel, currentImg, isProcessingLocal]);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -90,28 +118,42 @@ const ImageViewer = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onNavigate, onClose]);
 
-  const currentImg = images[currentIndex];
-  const is3DModel = currentImg ? (currentImg.toLowerCase().endsWith('.glb') || currentImg.toLowerCase().endsWith('.gltf')) : false;
-  const targetFolder = folderKey === 'ai_input' ? 'ai_output' : 'metashape_ai_output';
-  const hasDefects = folderKey === 'ai_input' 
-    ? globalImages.ai_output.includes(currentImg) 
-    : globalImages.metashape_ai_output.includes(currentImg);
-  
-  const targetKey = `${projectId}_${showDefects && !is3DModel ? targetFolder : folderKey}_${currentImg}`;
-  const imageSrc = objectUrls[targetKey];
+  if (!currentImg) return null;
 
-  const loadOrProcess = async (forceProcess = false) => {
-     if (!forceProcess && (hasDefects || is3DModel)) return; 
-     try {
-         await startSingleProcess(currentImg);
-     } catch (e) {}
+  const targetKeySource = `${projectId}_${folderKey}_${currentImg}`;
+  const targetKeyYolo = `${projectId}_${yoloFolder}_${maskImgName}`;
+  const targetKeyCrack = `${projectId}_${crackFolder}_${maskImgName}`;
+  
+  const imageSrcSource = objectUrls[targetKeySource];
+  const imageSrcYolo = objectUrls[targetKeyYolo];
+  const imageSrcCrack = objectUrls[targetKeyCrack];
+
+  const handleSourceClick = () => {
+      setShowYolo(false);
+      setShowCrackSam(false);
   };
-  
-  useEffect(() => {
-     if (showDefects && !is3DModel) loadOrProcess();
-  }, [showDefects, currentIndex]);
 
-  if (!images || images.length === 0) return null;
+  const handleToggleYolo = async () => {
+      const nextState = !showYolo;
+      setShowYolo(nextState);
+      if (nextState && !hasYolo) {
+          setIsProcessingLocal(true);
+          try { await startSingleProcess(currentImg, ['yolo']); } catch(e){}
+          setIsProcessingLocal(false);
+      }
+  };
+
+  const handleToggleCrackSam = async () => {
+      const nextState = !showCrackSam;
+      setShowCrackSam(nextState);
+      if (nextState && !hasCrack) {
+          setIsProcessingLocal(true);
+          try { await startSingleProcess(currentImg, ['cracksam']); } catch(e){}
+          setIsProcessingLocal(false);
+      }
+  };
+
+  const isSourceOnly = !showYolo && !showCrackSam;
 
   return (
     <div 
@@ -133,25 +175,58 @@ const ImageViewer = ({
       )}
 
       <div className="image-viewer__container" ref={containerRef} onClick={e => e.stopPropagation()} style={is3DModel ? { padding: 0 } : {}}>
-        {imageSrc ? (
+        {imageSrcSource ? (
             is3DModel ? (
                 <AdvancedModelViewer 
-                    src={imageSrc} 
+                    src={imageSrcSource} 
                     rotationFix={modelRotation === -90 || modelRotation === 270}
                 />
             ) : (
-                <img
-                  ref={imageRef}
-                  src={imageSrc}
-                  alt="Просмотр"
-                  className="image-viewer__img"
-                  draggable={false}
-                  style={{
-                    transform: `scale(${scale}) translate(${position.x}px, ${position.y}px)`,
-                    cursor: scale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default'
-                  }}
-                  onMouseDown={handleMouseDown}
-                />
+                (isProcessingLocal || (showYolo && !hasYolo) || (showCrackSam && !hasCrack)) ? (
+                    <div className="image-viewer__loader">
+                        <div className="premium-loader premium-loader--large"></div>
+                    </div>
+                ) : (
+                    <div 
+                      className="image-viewer__layers"
+                      ref={imageRef}
+                      onMouseDown={handleMouseDown}
+                      style={{
+                        position: 'relative',
+                        transform: `scale(${scale}) translate(${position.x}px, ${position.y}px)`,
+                        cursor: scale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        maxWidth: '100%',
+                        maxHeight: '100%',
+                        transition: isDragging ? 'none' : 'transform 0.1s ease-out'
+                      }}
+                    >
+                        <img
+                          src={imageSrcSource}
+                          alt="Исходник"
+                          className="image-viewer__layer-source"
+                          draggable={false}
+                        />
+                        {showYolo && imageSrcYolo && (
+                            <img
+                              src={imageSrcYolo}
+                              alt="YOLO"
+                              className="image-viewer__layer-yolo"
+                              draggable={false}
+                            />
+                        )}
+                        {showCrackSam && imageSrcCrack && (
+                            <img
+                              src={imageSrcCrack}
+                              alt="CrackSAM"
+                              className="image-viewer__layer-cracksam"
+                              draggable={false}
+                            />
+                        )}
+                    </div>
+                )
             )
         ) : (
             <div className="image-viewer__loader">
@@ -159,13 +234,32 @@ const ImageViewer = ({
             </div>
         )}
         
-        <div className="image-viewer__controls">
+        <div className="image-viewer__controls-wrapper">
           {!is3DModel && (
-            <div className="segmented-control" style={{ marginRight: '16px', background: '#09090b', borderColor: '#27272a' }}>
-               <button className={`segmented-btn ${!showDefects ? 'active' : ''}`} onClick={() => setShowDefects(false)}>Исходник</button>
-               <button className={`segmented-btn ${showDefects ? 'active' : ''}`} onClick={() => setShowDefects(true)}>Результат</button>
-            </div>
+             <div className={`image-viewer__legend ${showYolo || showCrackSam ? 'visible' : 'hidden'}`}>
+                 <div className="legend-item" style={{display: (showYolo || showCrackSam) ? 'flex' : 'none'}}>
+                     <span className="legend-color" style={{backgroundColor: '#ff0000'}}></span>Трещины
+                 </div>
+                 <div className="legend-item" style={{display: showYolo ? 'flex' : 'none'}}>
+                     <span className="legend-color" style={{backgroundColor: '#ffff00'}}></span>Сколы
+                 </div>
+                 <div className="legend-item" style={{display: showYolo ? 'flex' : 'none'}}>
+                     <span className="legend-color" style={{backgroundColor: '#00ff00'}}></span>Растительность
+                 </div>
+                 <div className="legend-item" style={{display: showYolo ? 'flex' : 'none'}}>
+                     <span className="legend-color" style={{backgroundColor: '#0000ff'}}></span>Отслоения
+                 </div>
+             </div>
           )}
+          
+          <div className="image-viewer__controls">
+            {!is3DModel && (
+              <div className="segmented-control image-viewer__segmented-control">
+                 <button className={`segmented-btn ${isSourceOnly ? 'active' : ''}`} onClick={handleSourceClick}>Исходник</button>
+                 <button className={`segmented-btn ${showYolo ? 'active' : ''}`} onClick={handleToggleYolo}>YOLO</button>
+                 <button className={`segmented-btn ${showCrackSam ? 'active' : ''}`} onClick={handleToggleCrackSam}>CrackSAM</button>
+              </div>
+            )}
           
           {!is3DModel && (
               <>
@@ -184,7 +278,7 @@ const ImageViewer = ({
 
           {is3DModel && (
               <>
-                  <button className="image-viewer__btn" onClick={() => setModelRotation(prev => (prev + 90) % 360)} title="Повернуть ось (исправить кривое вращение)" style={{ gap: '8px', padding: '0 12px', width: 'auto' }}>
+                  <button className="image-viewer__btn image-viewer__btn--rotate" onClick={() => setModelRotation(prev => (prev + 90) % 360)} title="Повернуть ось (исправить кривое вращение)">
                     <RefreshCw size={18} /> <span>Повернуть ось</span>
                   </button>
                   <div className="image-viewer__divider"></div>
@@ -194,6 +288,7 @@ const ImageViewer = ({
           <button className="image-viewer__btn image-viewer__btn--close" onClick={onClose} title="Закрыть">
             <X size={18} />
           </button>
+          </div>
         </div>
         
         <div className="image-viewer__counter">

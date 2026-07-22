@@ -34,9 +34,20 @@
   cursor: grabbing;
 }
 
-.image-viewer__controls {
+.image-viewer__controls-wrapper {
   position: absolute;
   bottom: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  z-index: 100;
+  opacity: 0;
+  transform: translateY(20px);
+  animation: controlsEntrance 0.4s 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.image-viewer__controls {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -45,10 +56,6 @@
   border: 1px solid #27272a;
   border-radius: 12px;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
-  z-index: 100;
-  opacity: 0;
-  transform: translateY(20px);
-  animation: controlsEntrance 0.4s 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 @keyframes controlsEntrance {
@@ -174,3 +181,90 @@
   animation: spin 2s linear infinite;
 }
 @keyframes spin { 100% { transform: rotate(360deg); } }
+.image-viewer__layer-source {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.image-viewer__layer-yolo {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.image-viewer__layer-cracksam {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.image-viewer__segmented-control {
+  margin-right: 16px;
+  background: var(--color-bg-main);
+  border-color: var(--color-border);
+}
+
+.image-viewer__btn--rotate {
+  gap: 8px;
+  padding: 0 12px;
+  width: auto;
+}
+
+.image-viewer__legend {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 12px;
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1), transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), margin 0.3s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.3s;
+}
+
+.image-viewer__legend.hidden {
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(10px);
+  margin-bottom: -46px; /* Collapses the space so buttons don't jump */
+  pointer-events: none;
+}
+
+.image-viewer__legend.visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  margin-bottom: 0;
+  pointer-events: auto;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #e4e4e7;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: 'Inter', sans-serif;
+}
+
+.legend-color {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.2), 0 2px 4px rgba(0,0,0,0.3);
+}

@@ -16,13 +16,14 @@ export default function ResultPage() {
   
   const [projects, setProjects] = useState([]);
   const [activeProject, setActiveProject] = useState(null);
-  const [images, setImages] = useState({ projectId: null, ai_input: [], ai_output: [], metashape_input: [], metashape_output: [], thermal_input: [] });
+  const [images, setImages] = useState({ projectId: null, ai_input: [], ai_output_yolo: [], ai_output_cracksam: [], metashape_input: [], metashape_output: [], metashape_ai_output_yolo: [], metashape_ai_output_cracksam: [], thermal_input: [] });
   const [activeGroup, setActiveGroup] = useState('ai');
   const [showAIOutput, setShowAIOutput] = useState(false);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [fullscreenImageIndex, setFullscreenImageIndex] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [selectedAIModels, setSelectedAIModels] = useState(['yolo']);
   const [errorMsg, setErrorMsg] = useState(null);
   const [projectStatus, setProjectStatus] = useState({ ai: 'idle', metashape: 'idle', error: null });
   const [processingImages, setProcessingImages] = useState(new Set());
@@ -89,7 +90,11 @@ export default function ResultPage() {
                   const fKey = data.processing_ai?.includes(img) ? 'ai_input' : 'metashape_input';
                   (async () => {
                       try {
-                          await authFetch(`${API_BASE_URL}/api/projects/${projectId}/images/${fKey}/${img}/process_ai`, { method: 'POST' });
+                          await authFetch(`${API_BASE_URL}/api/projects/${projectId}/images/${fKey}/${img}/process_ai`, { 
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ models: selectedAIModels })
+                          });
                           await fetchImages(projectId);
                       } finally {
                           activeRequests.current.delete(img);
@@ -108,7 +113,7 @@ export default function ResultPage() {
 
   useEffect(() => {
     if (activeProject?.id) { 
-      setImages({ projectId: null, ai_input: [], ai_output: [], metashape_input: [], metashape_project: [], metashape_ai_output: [], thermal_input: [] });
+      setImages({ projectId: null, ai_input: [], ai_output_yolo: [], ai_output_cracksam: [], metashape_input: [], metashape_project: [], metashape_ai_output_yolo: [], metashape_ai_output_cracksam: [], thermal_input: [] });
       setObjectUrls(prev => {
           Object.values(prev).forEach(url => {
               try { URL.revokeObjectURL(url); } catch (e) {}
@@ -117,6 +122,7 @@ export default function ResultPage() {
       });
       setProjectStatus({ 
           ai: activeProject.ai_status || 'idle', 
+          ai_models: activeProject.ai_models || [],
           metashape: activeProject.metashape_status || 'idle', 
           error: activeProject.error_message || null 
       });
@@ -195,7 +201,11 @@ export default function ResultPage() {
         method: 'POST', body: formData
       });
       if (group === 'ai') {
-          await authFetch(`${API_BASE_URL}/api/projects/${activeProject.id}/process/${group}`, { method: 'POST' });
+          await authFetch(`${API_BASE_URL}/api/projects/${activeProject.id}/process/${group}`, { 
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ models: selectedAIModels })
+          });
       }
       fetchImages(activeProject.id);
     } catch (e) { console.error(e); }
@@ -209,7 +219,11 @@ export default function ResultPage() {
     setProjectStatus(prev => ({ ...prev, [group]: 'processing', error: null }));
     
     try {
-      await authFetch(`${API_BASE_URL}/api/projects/${activeProject.id}/process/${group}`, { method: 'POST' });
+      await authFetch(`${API_BASE_URL}/api/projects/${activeProject.id}/process/${group}`, { 
+          method: 'POST',
+          headers: group === 'ai' ? { 'Content-Type': 'application/json' } : undefined,
+          body: group === 'ai' ? JSON.stringify({ models: selectedAIModels }) : undefined
+      });
       fetchImages(activeProject.id);
     } catch (e) { 
         console.error(e); 
@@ -235,26 +249,22 @@ export default function ResultPage() {
       });
 
       if (group === 'ai_input') {
-          const outKey = `${activeProject.id}_ai_output_${filename}`;
+          const outKeyYolo = `${activeProject.id}_ai_output_yolo_${filename.replace(/\.[^/.]+$/, ".png")}`;
+          const outKeyCrack = `${activeProject.id}_ai_output_cracksam_${filename.replace(/\.[^/.]+$/, ".png")}`;
           setObjectUrls(prev => {
-              if (prev[outKey]) {
-                  try { URL.revokeObjectURL(prev[outKey]); } catch (e) {}
-                  const next = { ...prev };
-                  delete next[outKey];
-                  return next;
-              }
-              return prev;
+              const next = { ...prev };
+              if (next[outKeyYolo]) { try { URL.revokeObjectURL(next[outKeyYolo]); } catch(e){} delete next[outKeyYolo]; }
+              if (next[outKeyCrack]) { try { URL.revokeObjectURL(next[outKeyCrack]); } catch(e){} delete next[outKeyCrack]; }
+              return next;
           });
       } else if (group === 'metashape_input') {
-          const outKey = `${activeProject.id}_metashape_ai_output_${filename}`;
+          const outKeyYolo = `${activeProject.id}_metashape_ai_output_yolo_${filename.replace(/\.[^/.]+$/, ".png")}`;
+          const outKeyCrack = `${activeProject.id}_metashape_ai_output_cracksam_${filename.replace(/\.[^/.]+$/, ".png")}`;
           setObjectUrls(prev => {
-              if (prev[outKey]) {
-                  try { URL.revokeObjectURL(prev[outKey]); } catch (e) {}
-                  const next = { ...prev };
-                  delete next[outKey];
-                  return next;
-              }
-              return prev;
+              const next = { ...prev };
+              if (next[outKeyYolo]) { try { URL.revokeObjectURL(next[outKeyYolo]); } catch(e){} delete next[outKeyYolo]; }
+              if (next[outKeyCrack]) { try { URL.revokeObjectURL(next[outKeyCrack]); } catch(e){} delete next[outKeyCrack]; }
+              return next;
           });
       }
 
@@ -280,7 +290,7 @@ export default function ResultPage() {
     const currentProjectId = activeProject.id;
     
     const missingKeys = [];
-    for (const group of ['ai_input', 'ai_output', 'metashape_input', 'metashape_project', 'metashape_ai_output', 'thermal_input']) {
+    for (const group of ['ai_input', 'ai_output_yolo', 'ai_output_cracksam', 'metashape_input', 'metashape_project', 'metashape_ai_output_yolo', 'metashape_ai_output_cracksam', 'thermal_input']) {
         for (const img of images[group] || []) {
             const key = `${currentProjectId}_${group}_${img}`;
             if (!objectUrls[key]) {
@@ -296,7 +306,7 @@ export default function ResultPage() {
         let changed = false;
         for (const { group, img, key } of missingKeys) {
             try {
-                const res = await authFetch(`${API_BASE_URL}/api/projects/${currentProjectId}/images/${group}/${img}`);
+                const res = await authFetch(`${API_BASE_URL}/api/projects/${currentProjectId}/images/${group}/${img}?t=${Date.now()}`);
                 if (res.ok) {
                     const blob = await res.blob();
                     newUrls[key] = URL.createObjectURL(blob);
@@ -317,14 +327,44 @@ export default function ResultPage() {
 
   const isImageProcessing = (img) => {
       if (processingImages.has(img)) return true;
-      if (activeGroup === 'ai' && projectStatus.ai === 'processing' && !images.ai_output.includes(img)) return true;
+      if (activeGroup === 'ai' && projectStatus.ai === 'processing') {
+          const modelsToCheck = projectStatus.ai_models?.length ? projectStatus.ai_models : ['yolo'];
+          const baseName = img.substring(0, img.lastIndexOf('.')) || img;
+          const outName = baseName + '.png';
+          
+          const hasAllOutputs = modelsToCheck.every(model => {
+              const outputList = images[`ai_output_${model}`];
+              return outputList && outputList.includes(outName);
+          });
+          
+          if (!hasAllOutputs) return true;
+      }
       return false;
   };
 
-  const startSingleProcess = async (img) => {
+  const startSingleProcess = async (img, modelsToRun = ['yolo']) => {
       setProcessingImages(prev => new Set(prev).add(img));
       try {
-          await authFetch(`${API_BASE_URL}/api/projects/${activeProject.id}/images/${folderKey}/${img}/process_ai`, { method: 'POST' });
+          await authFetch(`${API_BASE_URL}/api/projects/${activeProject.id}/images/${folderKey}/${img}/process_ai`, { 
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ models: modelsToRun })
+          });
+          
+          const maskImgName = img.replace(/\.[^/.]+$/, ".png");
+          setObjectUrls(prev => {
+              const next = { ...prev };
+              for (const model of modelsToRun) {
+                  const outGroup = folderKey === 'ai_input' ? `ai_output_${model}` : `metashape_ai_output_${model}`;
+                  const key = `${activeProject.id}_${outGroup}_${maskImgName}`;
+                  if (next[key]) {
+                      try { URL.revokeObjectURL(next[key]); } catch(e) {}
+                      delete next[key];
+                  }
+              }
+              return next;
+          });
+          
           await fetchImages(activeProject.id);
       } finally {
           setProcessingImages(prev => {
@@ -353,9 +393,9 @@ export default function ResultPage() {
       )}
       {projectStatus.error && (
         <div className="app-status-panel">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', gap: '15px' }}>
-                <span className="app-status app-status--error" style={{ margin: 0, width: '100%' }}>{projectStatus.error}</span>
-                <button onClick={() => setProjectStatus(prev => ({ ...prev, error: null }))} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: '0 5px' }} title="Скрыть ошибку"><X size={16} /></button>
+            <div className="app-status-error-container">
+                <span className="app-status app-status--error">{projectStatus.error}</span>
+                <button onClick={() => setProjectStatus(prev => ({ ...prev, error: null }))} className="app-status-close-btn" title="Скрыть ошибку"><X size={16} /></button>
             </div>
         </div>
       )}
@@ -413,7 +453,7 @@ export default function ResultPage() {
             <h1 className="content-title">{activeProject.name}</h1>
             
             {(activeGroup === 'metashape' || activeGroup === 'metashape_result') && projectStatus.metashape !== 'processing' && images?.metashape_input?.length > 0 && (
-                <button className="process-btn" onClick={() => handleProcess('metashape')} disabled={isUploading} style={{ background: 'rgba(255, 255, 255, 0.1)', color: '#fff', border: '1px solid rgba(255, 255, 255, 0.2)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}>
+                <button className="process-btn process-btn--metashape" onClick={() => handleProcess('metashape')} disabled={isUploading}>
                     <CheckCircle2 size={14} /> Собрать 3D-модель
                 </button>
             )}
@@ -501,7 +541,7 @@ export default function ResultPage() {
                             ) : (
                                 <>
                                     <p>3D-модель еще не собрана.</p>
-                                    <button className="process-btn" onClick={() => { handleProcess('metashape'); }} disabled={isUploading || !images.metashape_input?.length} style={{ padding: '12px 24px', fontSize: '16px', background: 'var(--primary-color)', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <button className="process-btn process-btn--generate" onClick={() => { handleProcess('metashape'); }} disabled={isUploading || !images.metashape_input?.length}>
                                         <Sparkles size={20} /> Запустить генерацию 3D-модели
                                     </button>
                                 </>
@@ -536,6 +576,7 @@ export default function ResultPage() {
                     projectId={activeProject.id}
                     objectUrls={objectUrls}
                     startSingleProcess={startSingleProcess}
+                    aiModels={projectStatus.ai_models?.length ? projectStatus.ai_models : selectedAIModels}
                 />
             </div>
         </div>
