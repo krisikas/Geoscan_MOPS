@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://www.geoscan.ru/themes/geoscan/img/logo_w.svg" alt="Geoscan Logo" width="250" />
+  <img src="readme_photos/geoscan.svg" alt="Geoscan Logo" width="250" />
   <h1>МОПС: Мониторинг и Обследование Поверхностей Сооружений</h1>
   <p>
     <em>Инновационная система автоматизированного инспектирования фасадов зданий с использованием беспилотной авиации, фотограмметрии и ИИ.</em>
@@ -32,6 +32,23 @@
 
 ---
 
+## Скриншоты веб-интерфейса
+
+Ниже представлены ключевые экраны веб-интерфейса системы:
+
+<div align="center">
+  <img src="readme_photos/main.png" alt="Главная страница" width="80%" />
+  <br><em>Главная начальная страница</em><br><br>
+  
+  <img src="readme_photos/planing.png" alt="Планирование и выполнение полета" width="80%" />
+  <br><em>Страница планирования маршрута и выполнения полета</em><br><br>
+  
+  <img src="readme_photos/result.png" alt="Просмотр результата" width="80%" />
+  <br><em>Просмотр результатов (3D-модель здания с дефектами)</em><br><br>
+</div>
+
+---
+
 ## Архитектура
 
 В связи с поэтапным развитием проекта и техническими ограничениями сторонних лицензий (Agisoft Metashape), система имеет два архитектурных состояния: **целевую для Production** и **текущую для Development**. Обе построены по микросервисному паттерну для изоляции тяжелых вычислительных процессов от службы телеметрии.
@@ -42,8 +59,10 @@
 
 ```mermaid
 flowchart TD
+    User((Браузер пользователя))
+
     subgraph Docker_Environment[Docker]
-        Frontend[Frontend Dev Server \nVite :5173]
+        Frontend[Vite Dev Server \n:5173]
         DB[(PostgreSQL :5432)]
     end
 
@@ -51,31 +70,30 @@ flowchart TD
         Backend[Backend Service \n:8000]
         AIService[Agent Service \n:8001]
         Telemetry[Telemetry Service \n:8002]
-        MCP[Pioneer MCP Server]
+        MCP[MCP Server]
     end
 
-    subgraph Drone_Layer[Drone Pioneer Mini 2]
-        DroneTCP[Drone TCP SDK]
-        DroneHTTP[Drone HTTP API]
+    subgraph Drone_Layer[Pioneer Mini 2]
+        PioneerSDK2[Pioneer SDK2]
+        HTTPAPI[HTTP API]
     end
 
     VLM[VLM - Gemini 3.5 Flash]
 
-    User((User)) <-->|HTTP| Frontend
+    User -->|HTTP GET (загрузка UI)| Frontend
+    User -->|HTTP REST| Backend
+    User -->|WebSocket| Telemetry
+    User -->|HTTP POST| AIService
     
-    Frontend <-->|REST API| Backend
-    Frontend <-->|WebSocket| Telemetry
-    Frontend -->|REST API| AIService
+    Backend -->|TCP| DB
     
-    Backend <--> DB
+    Telemetry -->|HTTP GET| HTTPAPI
+    Telemetry -->|TCP| PioneerSDK2
+    Telemetry -->|HTTP POST| Backend
     
-    Telemetry <-->|HTTP Polling| DroneHTTP
-    Telemetry -->|TCP / Emergency| DroneTCP
-    Telemetry -->|POST Photos| Backend
-    
-    AIService -->|CLI Prompts| VLM
-    VLM -->|JSON-RPC / Tool call| MCP
-    MCP -->|TCP / UART| DroneTCP
+    AIService -->|Subprocess (agy CLI)| VLM
+    VLM -->|JSON-RPC tool calling| MCP
+    MCP -->|TCP| PioneerSDK2
 ```
 
 ### 2. Целевая архитектура (Production)
@@ -84,49 +102,51 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    subgraph Frontend_Layer[Frontend]
-        Static[React / Vite SPA]
+    User((Браузер пользователя))
+
+    subgraph Frontend_Layer[Frontend Server]
         Nginx[Nginx Web Server]
+        Static[Static Files \nHTML/JS/CSS]
     end
 
-    subgraph Docker_Backend[Backend Infrastructure - Docker]
+    subgraph Docker_Backend[Backend Docker Network]
         Backend[Backend Service]
         AIService[Agent Service]
         Telemetry[Telemetry Service]
-        MCP[Pioneer MCP Server]
+        MCP[MCP Server]
         DB[(PostgreSQL)]
     end
 
-    subgraph Drone_Layer[Drone Pioneer Mini 2]
-        DroneTCP[Drone TCP SDK]
-        DroneHTTP[Drone HTTP API]
+    subgraph Drone_Layer[Pioneer Mini 2]
+        PioneerSDK2[Pioneer SDK2]
+        HTTPAPI[HTTP API]
     end
 
-    VLM[VLM - Gemini 3.5 Flash]
+    VLM[Cloud VLM API \nGemini 3.5 Flash]
 
-    User((User)) -->|HTTPS| Nginx
-    Nginx -.-> Static
+    User -->|HTTPS GET| Nginx
+    Nginx -.->|Отдача файлов| Static
     
-    Static <-->|REST API| Backend
-    Static <-->|WebSocket| Telemetry
-    Static -->|REST API| AIService
+    User -->|HTTP REST| Backend
+    User -->|WebSocket| Telemetry
+    User -->|HTTP POST| AIService
     
-    Backend <--> DB
+    Backend -->|TCP| DB
     
-    Telemetry <-->|HTTP Polling| DroneHTTP
-    Telemetry -->|TCP / Emergency| DroneTCP
-    Telemetry -->|POST Photos| Backend
+    Telemetry -->|HTTP GET| HTTPAPI
+    Telemetry -->|TCP| PioneerSDK2
+    Telemetry -->|HTTP POST| Backend
     
-    AIService -->|CLI Prompts| VLM
-    VLM -->|JSON-RPC / Tool call| MCP
-    MCP -->|TCP / UART Commands| DroneTCP
+    AIService -->|REST API| VLM
+    VLM -->|JSON-RPC tool calling| MCP
+    MCP -->|TCP| PioneerSDK2
 ```
 
 ### Основные компоненты системы:
 1. **Frontend**: SPA-приложение на React (сборка Vite). Выполняется на стороне клиента, раздается через Nginx.
 2. **Backend**: Центральное API на FastAPI. Управляет проектами, сессиями, а также инициирует процессы фотограмметрии и детекции аномалий.
 3. **Agent Service**: Модуль планирования. Передает намерения оператора в визуальную языковую модель (VLM).
-4. **Pioneer MCP Server**: Сервер Model Context Protocol. Действует как мост между VLM и SDK дрона, переводя вызовы функций (tools) в понятные автопилоту команды (взлет, движение по координатам).
+4. **MCP Server**: Сервер Model Context Protocol. Действует как мост между VLM и SDK дрона, переводя вызовы функций (tools) в понятные автопилоту команды (взлет, движение по координатам).
 5. **Telemetry Service**: Сервис пассивного сбора данных. Транслирует телеметрию с дрона во Frontend и перенаправляет фотографии в Backend.
 6. **Database**: PostgreSQL.
 
