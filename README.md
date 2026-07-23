@@ -34,7 +34,53 @@
 
 ## Архитектура
 
-Архитектура построена по микросервисному паттерну. Тяжелые вычислительные процессы (инференс ИИ и фотограмметрия) вынесены в отдельные сервисы и полностью изолированы от службы телеметрии, что гарантирует бесперебойную связь с дроном даже при пиковых нагрузках на сервер.
+В связи с поэтапным развитием проекта и техническими ограничениями сторонних лицензий (Agisoft Metashape), система имеет два архитектурных состояния: **целевую для Production** и **текущую для Development**. Обе построены по микросервисному паттерну для изоляции тяжелых вычислительных процессов от службы телеметрии.
+
+### 1. Текущая архитектура (Development / Локальная)
+
+Запускается через `start.sh`. Бэкенд-сервисы работают как нативные процессы ОС хоста (для прямого доступа к аппаратным ключам Metashape), а База данных и Фронтенд изолированы в Docker.
+
+```mermaid
+flowchart TD
+    subgraph Docker_Environment[Docker]
+        Frontend[Frontend Dev Server \nVite :5173]
+        DB[(PostgreSQL :5432)]
+    end
+
+    subgraph Host_Machine[Host Machine - Нативные процессы]
+        Backend[Backend Service \n:8000]
+        AIService[Agent Service \n:8001]
+        Telemetry[Telemetry Service \n:8002]
+        MCP[Pioneer MCP Server]
+    end
+
+    subgraph Drone_Layer[Drone Pioneer Mini 2]
+        DroneTCP[Drone TCP SDK]
+        DroneHTTP[Drone HTTP API]
+    end
+
+    VLM[VLM - Gemini 3.5 Flash]
+
+    User((User)) <-->|HTTP| Frontend
+    
+    Frontend <-->|REST API| Backend
+    Frontend <-->|WebSocket| Telemetry
+    Frontend -->|REST API| AIService
+    
+    Backend <--> DB
+    
+    Telemetry <-->|HTTP Polling| DroneHTTP
+    Telemetry -->|TCP / Emergency| DroneTCP
+    Telemetry -->|POST Photos| Backend
+    
+    AIService -->|CLI Prompts| VLM
+    VLM -->|JSON-RPC / Tool call| MCP
+    MCP -->|TCP / UART| DroneTCP
+```
+
+### 2. Целевая архитектура (Production)
+
+Финальный этап развертывания. Все серверные компоненты работают в Docker, а Frontend скомпилирован в статику и раздается через веб-сервер.
 
 ```mermaid
 flowchart TD
@@ -58,24 +104,19 @@ flowchart TD
 
     VLM[VLM - Gemini 3.5 Flash]
 
-    %% User to Frontend
     User((User)) -->|HTTPS| Nginx
     Nginx -.-> Static
     
-    %% Frontend to Backend
     Static <-->|REST API| Backend
     Static <-->|WebSocket| Telemetry
     Static -->|REST API| AIService
     
-    %% Internal Docker
     Backend <--> DB
     
-    %% Drone Communications
     Telemetry <-->|HTTP Polling| DroneHTTP
     Telemetry -->|TCP / Emergency| DroneTCP
     Telemetry -->|POST Photos| Backend
     
-    %% AI and Agent flow
     AIService -->|CLI Prompts| VLM
     VLM -->|JSON-RPC / Tool call| MCP
     MCP -->|TCP / UART Commands| DroneTCP
