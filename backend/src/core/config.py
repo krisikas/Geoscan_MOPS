@@ -2,16 +2,19 @@ import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import BaseModel, model_validator
 from typing import Optional
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Geoscan MOPS Backend"
     
     # DATABASE
-    POSTGRES_USER: str = "mops_user"
-    POSTGRES_PASSWORD: str = "mops_password"
-    POSTGRES_DB: str = "mops_db"
-    POSTGRES_HOST: str = "localhost"
-    POSTGRES_PORT: str = "5432"
+    POSTGRES_USER: str = os.getenv("POSTGRES_USER")
+    POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD")
+    POSTGRES_DB: str = os.getenv("POSTGRES_DB")
+    POSTGRES_HOST: str = os.getenv("POSTGRES_HOST")
+    POSTGRES_PORT: str = os.getenv("POSTGRES_PORT")
     
     DATABASE_URL: Optional[str] = None
     

@@ -422,39 +422,7 @@ def process_metashape(project_id: int, background_tasks: BackgroundTasks, db: Se
     background_tasks.add_task(run_metashape_task, project.id, input_dir, output_dir)
     return {"status": "started"}
 
-@router.post("/{project_id}/plan")
-async def generate_plan(project_id: int, request: PlanRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    project = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-        
-    try:
-        from src.db.models import ChatMessage
-        import json
-        
-        user_msg = ChatMessage(project_id=project_id, role="user", content=request.new_prompt)
-        db.add(user_msg)
-        db.commit()
 
-        async with httpx.AsyncClient() as client:
-            response = await client.post("http://localhost:8001/plan", json=request.model_dump(), timeout=120.0)
-            response.raise_for_status()
-            ai_data = response.json()
-            
-            project.route_data = {"coordinates": ai_data.get("coordinates"), "buildings": ai_data.get("buildings")}
-            ai_msg = ChatMessage(
-                project_id=project_id, 
-                role="ai", 
-                content=ai_data.get("text", "")
-            )
-            db.add(ai_msg)
-            db.commit()
-            
-            return ai_data
-    except httpx.RequestError as e:
-        raise HTTPException(status_code=503, detail=f"AI Service is unreachable: {str(e)}")
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=e.response.status_code, detail=f"AI Service error: {e.response.text}")
 
 @router.get("/{project_id}/chat", response_model=List[ChatMessageResponse])
 def get_chat_messages(project_id: int, limit: int = 50, offset: int = 0, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -630,6 +598,118 @@ async def stream_flight(websocket: WebSocket, project_id: int, ip: str = "127.0.
         
     except WebSocketDisconnect:
         print("Client disconnected")
+    finally:
+        if 'db' in locals():
+            db.close()
+
+@router.websocket("/{project_id}/stream_plan")
+async def stream_plan_proxy(websocket: WebSocket, project_id: int):
+    await websocket.accept()
+    try:
+        import json
+        import asyncio
+        from src.db.database import SessionLocal
+        from src.db.models import ChatMessage, Project
+        import websockets
+
+        db = SessionLocal()
+        project = db.query(Project).filter(Project.id == project_id).first()
+        
+        req_str = await websocket.receive_text()
+        try:
+            req_data = json.loads(req_str)
+            if "new_prompt" in req_data:
+                user_msg = ChatMessage(project_id=project_id, role="user", content=req_data["new_prompt"])
+                db.add(user_msg)
+                db.commit()
+        except Exception as e:
+            print("Error parsing plan request", e)
+
+        separator = ChatMessage(project_id=project_id, role="system", content="[SEPARATOR] Начало планирования")
+        db.add(separator)
+        db.commit()
+        await websocket.send_json({"role": "system", "content": "[SEPARATOR] Начало планирования"})
+
+        try:
+            async with websockets.connect("ws://localhost:8001/stream_plan", ping_interval=None, ping_timeout=None) as ai_ws:
+                await ai_ws.send(req_str)
+                
+                async def keep_alive_front():
+                    try:
+                        while True:
+                            msg = await websocket.receive_text()
+                    except WebSocketDisconnect:
+                        await ai_ws.close()
+                    except Exception:
+                        await ai_ws.close()
+                
+                frontend_keep_alive = asyncio.create_task(keep_alive_front())
+                
+                try:
+                    while True:
+                        line = await ai_ws.recv()
+                        if line:
+                            try:
+                                try:
+                                    agent_resp = AgentResponse.model_validate_json(line)
+                                except ValidationError:
+                                    # Fallback to save raw line as text if JSON doesn't match schema
+                                    msg = ChatMessage(project_id=project_id, role="ai", content=line)
+                                    db.add(msg)
+                                    db.commit()
+                                    await websocket.send_json({"role": "ai", "content": line})
+                                    continue
+                                
+                                if agent_resp.tool:
+                                    if agent_resp.tool.name == "return_route":
+                                        final_data = agent_resp.tool.args
+                                        if project:
+                                            project.route_data = {
+                                                "coordinates": final_data.get("coordinates") if isinstance(final_data, dict) else None, 
+                                                "buildings": final_data.get("buildings") if isinstance(final_data, dict) else None
+                                            }
+                                        ai_msg = ChatMessage(project_id=project_id, role="ai", content=agent_resp.content or "")
+                                        db.add(ai_msg)
+                                        db.commit()
+                                        await websocket.send_json({
+                                            "type": "final_plan", 
+                                            "data": {
+                                                "text": agent_resp.content or "", 
+                                                "coordinates": final_data.get("coordinates") if isinstance(final_data, dict) else None, 
+                                                "buildings": final_data.get("buildings") if isinstance(final_data, dict) else None
+                                            }
+                                        })
+                                    else:
+                                        content_str = f"[TOOL] {agent_resp.tool.name}: {json.dumps(agent_resp.tool.args, ensure_ascii=False)}"
+                                        msg = ChatMessage(project_id=project_id, role="system", content=content_str)
+                                        db.add(msg)
+                                        db.commit()
+                                        await websocket.send_json({"role": "system", "content": content_str})
+                                
+                                if agent_resp.content and agent_resp.content.strip():
+                                    if not (agent_resp.tool and agent_resp.tool.name == "return_route"):
+                                        msg = ChatMessage(project_id=project_id, role="ai", content=agent_resp.content.strip())
+                                        db.add(msg)
+                                        db.commit()
+                                        await websocket.send_json({"role": "ai", "content": agent_resp.content.strip()})
+                                        
+                            except Exception as e:
+                                print(f"Error processing plan message: {e}")
+                except websockets.exceptions.ConnectionClosed:
+                    pass
+                finally:
+                    frontend_keep_alive.cancel()
+        except Exception as e:
+            print("Error connecting to ai_service websocket:", e)
+            await websocket.send_json({"type": "error", "message": f"Ошибка соединения с AI Service: {str(e)}"})
+            
+        end_separator = ChatMessage(project_id=project_id, role="system", content="[SEPARATOR] Конец планирования")
+        db.add(end_separator)
+        db.commit()
+        await websocket.send_json({"role": "system", "content": "[SEPARATOR] Конец планирования"})
+            
+    except WebSocketDisconnect:
+        print("Client disconnected from plan proxy")
     finally:
         if 'db' in locals():
             db.close()

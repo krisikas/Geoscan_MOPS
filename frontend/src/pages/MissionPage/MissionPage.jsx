@@ -17,7 +17,6 @@ export default function MissionPage({ onStartFlight, loadingMessage, infoMessage
   const [newProjectName, setNewProjectName] = useState('');
   const [chatInput, setChatInput] = useState('');
   const [messages, setMessages] = useState([
-    { role: 'ai', text: 'Система ИИ инициализирована. Подключена к БПЛА по протоколу MCP. Какой объект планируем обследовать сегодня?' }
   ]);
   const [coordinates, setCoordinates] = useState([]);
   const [buildings, setBuildings] = useState([]);
@@ -186,54 +185,70 @@ export default function MissionPage({ onStartFlight, loadingMessage, infoMessage
     try {
       const historyPayload = currentHistory.map(m => ({ role: m.role, text: m.content || "" }));
       
-      const response = await fetch(`${API_BASE_URL}/api/projects/${activeProject.id}/plan`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          history: historyPayload,
-          new_prompt: userMsg.content,
-          current_route: activeProject.route_data || null
-        })
-      });
-
-      if (response.status === 401) { logout(); navigate('/auth'); return; }
-      if (!response.ok) {
-         let errorText = 'Ошибка сервера';
-         try { const errorData = await response.json(); errorText = errorData.detail || errorText; } catch(e) {}
-         throw new Error(errorText);
-      }
-
-      const data = await response.json();
-      const aiMsg = { role: 'ai', content: data.text };
-      setMessages(prev => [...prev, aiMsg]);
+      const wsUrl = API_BASE_URL.replace(/^http/, 'ws') + `/api/projects/${activeProject.id}/stream_plan`;
+      const planWs = new WebSocket(wsUrl);
       
-      // Update local active project state with new route data
-      if (data.coordinates || data.buildings) {
-          setActiveProject(prev => ({
-              ...prev,
-              route_data: {
-                  coordinates: data.coordinates || prev.route_data?.coordinates,
-                  buildings: data.buildings || prev.route_data?.buildings
-              }
+      planWs.onopen = () => {
+          planWs.send(JSON.stringify({
+              history: historyPayload,
+              new_prompt: userMsg.content,
+              current_route: activeProject.route_data || null
           }));
-      }
+      };
       
-      if (data.coordinates && data.coordinates.length > 0) {
-        setCoordinates(data.coordinates);
-        setCurrentStep(0);
-      }
-      if (data.buildings && data.buildings.length > 0) {
-         setBuildings(data.buildings);
-      }
-
+      planWs.onmessage = (event) => {
+          try {
+              const data = JSON.parse(event.data);
+              if (data.type === "final_plan") {
+                  setIsThinking(false);
+                  const finalData = data.data;
+                  setMessages(prev => [...prev, { role: 'ai', content: finalData.text }]);
+                  
+                  if (finalData.coordinates || finalData.buildings) {
+                      setActiveProject(prev => ({
+                          ...prev,
+                          route_data: {
+                              coordinates: finalData.coordinates || prev.route_data?.coordinates,
+                              buildings: finalData.buildings || prev.route_data?.buildings
+                          }
+                      }));
+                  }
+                  
+                  if (finalData.coordinates && finalData.coordinates.length > 0) {
+                      setCoordinates(finalData.coordinates);
+                      setCurrentStep(0);
+                  }
+                  if (finalData.buildings && finalData.buildings.length > 0) {
+                      setBuildings(finalData.buildings);
+                  }
+                  planWs.close();
+              } else if (data.type === "error") {
+                  setIsThinking(false);
+                  setMessages(prev => [...prev, { role: 'ai', content: data.message, isError: true }]);
+                  planWs.close();
+              } else if (data.role) {
+                  setMessages(prev => [...prev, data]);
+              }
+          } catch (e) {
+              setMessages(prev => [...prev, { role: 'ai', content: event.data }]);
+          }
+      };
+      
+      planWs.onerror = () => {
+          setIsThinking(false);
+          setMessages(prev => [...prev, { role: 'ai', content: 'Ошибка WebSocket соединения при планировании.', isError: true }]);
+      };
+      
+      planWs.onclose = () => {
+          setIsThinking(false);
+      };
+      
     } catch (e) {
       setMessages(prev => [...prev, { 
         role: 'ai', 
-        text: `[Системная ошибка]: ${e.message}`,
+        content: `[Системная ошибка]: ${e.message}`,
         isError: true
       }]);
-    } finally {
       setIsThinking(false);
     }
   };
@@ -370,20 +385,13 @@ export default function MissionPage({ onStartFlight, loadingMessage, infoMessage
             )}
             
             {messages.map((msg, idx) => {
-              if (msg.role === 'system' && msg.content === '[SEPARATOR] Начало полета') {
+              if (msg.role === 'system' && msg.content?.startsWith('[SEPARATOR]')) {
+                  const text = msg.content.replace('[SEPARATOR]', '').trim();
+                  const isEnd = text.toLowerCase().includes('конец');
                   return (
                       <div key={idx} style={{ display: 'flex', alignItems: 'center', margin: '20px 0', width: '100%' }}>
                           <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.1)' }}></div>
-                          <div style={{ padding: '0 15px', fontSize: '11px', color: 'var(--color-accent)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 'bold' }}>Начало полета</div>
-                          <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.1)' }}></div>
-                      </div>
-                  );
-              }
-              if (msg.role === 'system' && msg.content === '[SEPARATOR] Конец полета') {
-                  return (
-                      <div key={idx} style={{ display: 'flex', alignItems: 'center', margin: '20px 0', width: '100%' }}>
-                          <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.1)' }}></div>
-                          <div style={{ padding: '0 15px', fontSize: '11px', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 'bold' }}>Конец полета</div>
+                          <div style={{ padding: '0 15px', fontSize: '11px', color: isEnd ? 'var(--color-text-muted)' : 'var(--color-accent)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 'bold' }}>{text}</div>
                           <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.1)' }}></div>
                       </div>
                   );
@@ -432,7 +440,7 @@ export default function MissionPage({ onStartFlight, loadingMessage, infoMessage
             <textarea
               ref={textareaRef}
               className="chat-input" 
-              placeholder={activeProject ? "Введите параметры объекта или команды..." : "Создайте проект для начала..."} 
+              placeholder={activeProject ? "Введите команду..." : "Создайте проект для начала..."} 
               value={chatInput}
               rows={1}
               onChange={handleInput}

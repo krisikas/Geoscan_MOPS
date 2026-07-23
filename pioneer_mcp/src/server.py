@@ -73,20 +73,7 @@ async def go_to_local_point_relative(dx: float, dy: float, dz: float, dyaw: floa
     """
     return await _r.cmd_go_to_local_point_relative(dx, dy, dz, dyaw, speed, camera_angle)
 
-@mcp.tool()
-async def set_velocity(vx: float, vy: float, vz: float, yaw_rate: float) -> str:
-    """Задать скорость дрона в глобальной системе координат."""
-    return await _r.cmd_set_velocity(vx, vy, vz, yaw_rate)
 
-@mcp.tool()
-async def set_velocity_body_fixed(vx: float, vy: float, vz: float, yaw_rate: float) -> str:
-    """Задать скорость дрона относительно тела дрона."""
-    return await _r.cmd_set_velocity_bf(vx, vy, vz, yaw_rate)
-
-@mcp.tool()
-async def hold_position() -> str:
-    """Остановить движение дрона (зависнуть на месте)."""
-    return await _r.cmd_hold_position()
 
 @mcp.tool()
 async def set_yaw(angle_deg: float) -> str:
@@ -203,11 +190,6 @@ async def get_battery() -> str:
     return _r.res_battery()
 
 @mcp.tool()
-async def get_gps() -> str:
-    """Получить GPS-данные дрона."""
-    return _r.res_gps()
-
-@mcp.tool()
 async def get_sensors() -> str:
     """Получить данные сенсоров дрона."""
     return _r.res_sensors()
@@ -249,21 +231,3 @@ async def sensors_resource() -> str:
 async def flight_state_resource() -> str:
     """Состояние полёта дрона."""
     return _r.res_flight_state()
-
-
-# --- prompts ---
-
-@mcp.prompt()
-def preflight_check() -> list[dict]:
-    """Предполётная проверка."""
-    return [{"role": "user", "content": "Выполни предполётную проверку дрона перед взлётом.\n\n1. Прочитай ресурс drone://battery и проверь напряжение батареи.\n2. Прочитай ресурс drone://flight_state и проверь систему навигации.\n3. Проверь текущее состояние полёта (fly_state). Для взлёта дрон должен быть в состоянии ON_LAND.\n4. Если все проверки пройдены — сообщи, что дрон готов к взлёту.\n5. Если какая-либо проверка не пройдена — сообщи о проблеме."}]
-
-@mcp.prompt()
-def safe_return() -> list[dict]:
-    """Безопасное возвращение домой."""
-    return [{"role": "user", "content": "Выполни безопасное возвращение дрона домой.\n\n1. Прочитай ресурс drone://flight_state.\n2. Если дрон в воздухе — вызови return_to_home.\n3. Если RTL недоступен — выполни land.\n4. Убедись, что дрон в состоянии ON_LAND.\n5. Сообщи результат."}]
-
-@mcp.prompt()
-def fly_circle_plan() -> list[dict]:
-    """Планирование полёта по кругу."""
-    return [{"role": "user", "content": "Спланируй и выполни полёт дрона по кругу.\n\nЗапроси параметры: радиус, высота, скорость, количество кругов.\n\n1. Проверь батарею и состояние.\n2. Рассчитай точки: x = radius·cos(θ), y = radius·sin(θ), z = altitude.\n3. N = max(12, int(2π·radius / 0.5)).\n4. Последовательно отправляй go_to_local_point.\n5. Сообщи по завершении."}]
