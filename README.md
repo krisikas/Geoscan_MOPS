@@ -191,15 +191,7 @@ flowchart TD
 
 Система предусматривает два сценария запуска: **Production** (целевая боевая среда) и **Development** (локальная разработка).
 
-### 1. Боевая среда (Production)
-
-В продакшене используется строгая изоляция микросервисов и максимальная оптимизация ресурсов:
-- **Бэкенд-инфраструктура:** Все сервисы (`backend`, `ai_service`, `telemetry_service`, `pioneer_mcp`, а также БД `PostgreSQL`) упаковываются в изолированные Docker-контейнеры. В репозитории уже подготовлены соответствующие `Dockerfile` для каждого компонента.
-- **Фронтенд:** Не использует Docker. SPA-приложение собирается в статику (`npm run build`) и раздается через высокопроизводительный веб-сервер (например, Nginx). Это снижает потребление памяти и ускоряет загрузку интерфейса для клиента.
-
-*(Примечание: На данный момент ведется работа по адаптации аппаратных лицензий Agisoft Metashape для работы внутри Docker-контейнеров).*
-
-### 2. Локальная разработка (Development - `start.sh`)
+### 1. Локальная разработка (Development - `start.sh`)
 
 Для локальной разработки, тестов и обхода временных ограничений с лицензиями Metashape (которые привязываются к MAC-адресу хост-машины) используется скрипт `start.sh`.
 
@@ -218,13 +210,21 @@ chmod +x start.sh
 ```
 После запуска скрипта интерфейс будет доступен по адресу: `http://localhost:5173`.
 
+### 2. Боевая среда (Production)
+
+В продакшене используется строгая изоляция микросервисов и максимальная оптимизация ресурсов:
+- **Бэкенд-инфраструктура:** Все сервисы (`backend`, `ai_service`, `telemetry_service`, `pioneer_mcp`, а также БД `PostgreSQL`) упаковываются в изолированные Docker-контейнеры. В репозитории уже подготовлены соответствующие `Dockerfile` для каждого компонента.
+- **Фронтенд:** Не использует Docker. SPA-приложение собирается в статику (`npm run build`) и раздается через высокопроизводительный веб-сервер (например, Nginx). Это снижает потребление памяти и ускоряет загрузку интерфейса для клиента.
+
+*(Примечание: На данный момент ведется работа по адаптации аппаратных лицензий Agisoft Metashape для работы внутри Docker-контейнеров).*
+
 ---
 
 ## Технологический стек
 
 - **Frontend:** React 19, Vite, Styled Components.
 - **Backend:** FastAPI, PostgreSQL, Uvicorn, Python 3.12+.
-- **Computer Vision:** YOLOv8 (Ultralytics), Segment Anything (SAM), OpenCV, Agisoft Metashape Python API, SAHI.
+- **Computer Vision:** YOLOv26m (Ultralytics), Segment Anything (SAM), OpenCV, Agisoft Metashape Python API, SAHI.
 - **LLM Infrastructure:** Model Context Protocol (MCP), FastMCP, Gemini 3.5 Flash.
 - **Hardware:** Pioneer SDK2 (TCP/HTTP API), Pioneer Mini 2.
 
