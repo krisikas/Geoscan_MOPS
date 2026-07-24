@@ -80,7 +80,7 @@ flowchart TD
 
     VLM[VLM - Gemini 3.5 Flash]
 
-    User -->|HTTP GET (загрузка UI)| Frontend
+    User -->|HTTP GET| Frontend
     User -->|HTTP REST| Backend
     User -->|WebSocket| Telemetry
     User -->|HTTP POST| AIService
@@ -91,7 +91,7 @@ flowchart TD
     Telemetry -->|TCP| PioneerSDK2
     Telemetry -->|HTTP POST| Backend
     
-    AIService -->|Subprocess (agy CLI)| VLM
+    AIService -->|Subprocess| VLM
     VLM -->|JSON-RPC tool calling| MCP
     MCP -->|TCP| PioneerSDK2
 ```
