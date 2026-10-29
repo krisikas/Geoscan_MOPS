@@ -1,72 +1,73 @@
 <div align="center">
   <img src="readme_photos/geoscan.svg" alt="Geoscan Logo" width="250" />
-  <h1>МОПС: Мониторинг и Обследование Поверхностей Сооружений</h1>
+  <h1>MOPS: Monitoring and Inspection of Structure Surfaces</h1>
   <p>
-    <em>Инновационная система автоматизированного инспектирования фасадов зданий с использованием беспилотной авиации, фотограмметрии и ИИ.</em>
+    <em>Automated building facade inspection system using unmanned aerial vehicles, photogrammetry, and AI.</em>
   </p>
   <p>
-    <a href="#архитектура">Архитектура</a> •
-    <a href="#модули-компьютерного-зрения-ai">Компьютерное зрение</a> •
-    <a href="#принцип-работы">Принцип работы</a> •
-    <a href="#развертывание-docker">Развертывание</a>
+    <a href="#architecture">Architecture</a> •
+    <a href="#computer-vision-modules-ai">Computer Vision</a> •
+    <a href="#how-it-works">How It Works</a> •
+    <a href="#deployment-production-vs-development">Deployment</a> •
+    <a href="README_RU.md">Русская версия</a>
   </p>
 </div>
 
 ---
 
-## О проекте
+## About the Project
 
-**МОПС** — профессиональный аппаратно-программный комплекс, разработанный при поддержке компании **Геоскан**. Основная задача системы заключается в полной автоматизации процесса поиска дефектов (трещин, разрушений) на фасадах и крупногабаритных сооружениях при помощи дронов.
+**MOPS** is a hardware-software platform developed with support from **Geoscan**. The system automates the inspection of building facades and large-scale infrastructure, detecting surface defects (cracks, structural damage) using autonomous drones.
 
-Система позволяет оператору ставить задачи на естественном языке. Интеллектуальный агент (LLM) самостоятельно формирует полетное задание, дрон (**Pioneer Mini 2**) осуществляет облет и сбор фотографий. Бэкенд производит фотограмметрическую сшивку снимков в плоский ортофотофасад (через Agisoft Metashape) и с помощью ансамбля нейросетей (Yolo26m и Crack-SAM) локализует все повреждения.
-
----
-
-## Ключевые возможности
-
-- **Управление полетом на базе LLM:** Трансляция текстовых или голосовых команд в низкоуровневые полетные инструкции через Model Context Protocol (MCP).
-- **Высокоточная фотограмметрия:** Создание ортомозаики и цифровой модели высот (DEM) фасада для устранения оптических искажений перспективы.
-- **Ансамбль нейросетей для дефектоскопии:** Использование легковесной Yolo26m для быстрого поиска и тяжеловесной Crack-SAM для прецизионной сегментации трещин.
-- **Телеметрия в реальном времени:** Потоковая передача координат и видео с дрона в веб-интерфейс оператора через WebSockets с минимальной задержкой.
-- **Микросервисная архитектура:** Легкое развертывание компонентов системы в изолированных контейнерах через Docker Compose.
+Operators can assign tasks using natural language. An intelligent agent (LLM) formulates the flight mission, while the drone (**Pioneer Mini 2**) conducts autonomous flight and image acquisition. The backend reconstructs captured photographs into a planar facade orthomosaic (via Agisoft Metashape) and localizes damage using a neural network ensemble (YOLOv8 and Crack-SAM).
 
 ---
 
-## Скриншоты веб-интерфейса
+## Key Features
 
-Ниже представлены ключевые экраны веб-интерфейса системы:
+- **LLM-Driven Mission Planning:** Translates text or voice instructions into low-level flight commands via the Model Context Protocol (MCP).
+- **High-Precision Photogrammetry:** Generates facade orthomosaics and Digital Elevation Models (DEM) to eliminate optical perspective distortions.
+- **Neural Network Ensemble for Defect Detection:** Combines a fast YOLOv8 detector with a high-precision Crack-SAM model for fine crack segmentation.
+- **Real-Time Telemetry:** Streams drone coordinates and video to the operator web interface over WebSockets with minimal latency.
+- **Microservice Architecture:** Modular system components isolated in Docker containers via Docker Compose.
+
+---
+
+## Web Interface Screenshots
+
+Key interface screens of the system:
 
 <div align="center">
-  <img src="readme_photos/main.png" alt="Главная страница" width="80%" />
-  <br><em>Главная начальная страница</em><br><br>
+  <img src="readme_photos/main.png" alt="Home Screen" width="80%" />
+  <br><em>Main home dashboard</em><br><br>
   
-  <img src="readme_photos/planing.png" alt="Планирование и выполнение полета" width="80%" />
-  <br><em>Страница планирования маршрута и выполнения полета</em><br><br>
+  <img src="readme_photos/planing.png" alt="Flight Planning & Execution" width="80%" />
+  <br><em>Flight planning and execution dashboard</em><br><br>
   
-  <img src="readme_photos/result.png" alt="Просмотр результата" width="80%" />
-  <br><em>Просмотр результатов (3D-модель здания с дефектами)</em><br><br>
+  <img src="readme_photos/result.png" alt="Inspection Results" width="80%" />
+  <br><em>Inspection results (3D building model with detected defects)</em><br><br>
 </div>
 
 ---
 
-## Архитектура
+## Architecture
 
-В связи с поэтапным развитием проекта и техническими ограничениями сторонних лицензий (Agisoft Metashape), система имеет два архитектурных состояния: **целевую для Production** и **текущую для Development**. Обе построены по микросервисному паттерну для изоляции тяжелых вычислительных процессов от службы телеметрии.
+Due to staged project development and third-party license constraints (Agisoft Metashape), the system supports two operational configurations: **Production** and **Development**. Both follow a microservice pattern to decouple heavy computation from real-time telemetry streaming.
 
-### 1. Текущая архитектура (Development / Локальная)
+### 1. Development Architecture (Local)
 
-Запускается через `start.sh`. Бэкенд-сервисы работают как нативные процессы ОС хоста (для прямого доступа к аппаратным ключам Metashape), а База данных и Фронтенд изолированы в Docker.
+Launched via `start.sh`. Backend services run as native host processes (providing direct access to hardware-bound Metashape licenses), while the Database and Frontend run inside Docker.
 
 ```mermaid
 flowchart TD
-    User((Браузер пользователя))
+    User((User Browser))
 
     subgraph Docker_Environment[Docker]
         Frontend[Vite Dev Server \n:5173]
         DB[(PostgreSQL :5432)]
     end
 
-    subgraph Host_Machine[Host Machine - Нативные процессы]
+    subgraph Host_Machine[Host Machine - Native Processes]
         Backend[Backend Service \n:8000]
         AIService[Agent Service \n:8001]
         Telemetry[Telemetry Service \n:8002]
@@ -80,7 +81,7 @@ flowchart TD
 
     VLM[VLM - Gemini 3.5 Flash]
 
-    User -->|HTTP GET (загрузка UI)| Frontend
+    User -->|HTTP GET (UI assets)| Frontend
     User -->|HTTP REST| Backend
     User -->|WebSocket| Telemetry
     User -->|HTTP POST| AIService
@@ -96,13 +97,13 @@ flowchart TD
     MCP -->|TCP| PioneerSDK2
 ```
 
-### 2. Целевая архитектура (Production)
+### 2. Target Architecture (Production)
 
-Финальный этап развертывания. Все серверные компоненты работают в Docker, а Frontend скомпилирован в статику и раздается через веб-сервер.
+Final deployment architecture. All server components run inside Docker containers, and the Frontend is compiled into static assets served via a web server.
 
 ```mermaid
 flowchart TD
-    User((Браузер пользователя))
+    User((User Browser))
 
     subgraph Frontend_Layer[Frontend Server]
         Nginx[Nginx Web Server]
@@ -125,7 +126,7 @@ flowchart TD
     VLM[Cloud VLM API \nGemini 3.5 Flash]
 
     User -->|HTTPS GET| Nginx
-    Nginx -.->|Отдача файлов| Static
+    Nginx -.->|Static Delivery| Static
     
     User -->|HTTP REST| Backend
     User -->|WebSocket| Telemetry
@@ -142,85 +143,83 @@ flowchart TD
     MCP -->|TCP| PioneerSDK2
 ```
 
-### Основные компоненты системы:
-1. **Frontend**: SPA-приложение на React (сборка Vite). Выполняется на стороне клиента, раздается через Nginx.
-2. **Backend**: Центральное API на FastAPI. Управляет проектами, сессиями, а также инициирует процессы фотограмметрии и детекции аномалий.
-3. **Agent Service**: Модуль планирования. Передает намерения оператора в визуальную языковую модель (VLM).
-4. **MCP Server**: Сервер Model Context Protocol. Действует как мост между VLM и SDK дрона, переводя вызовы функций (tools) в понятные автопилоту команды (взлет, движение по координатам).
-5. **Telemetry Service**: Сервис пассивного сбора данных. Транслирует телеметрию с дрона во Frontend и перенаправляет фотографии в Backend.
+### Core System Components:
+1. **Frontend**: React SPA application (built with Vite). Rendered client-side and served via Nginx.
+2. **Backend**: Central API built with FastAPI. Manages projects, sessions, and triggers photogrammetry and anomaly detection pipelines.
+3. **Agent Service**: Planning module. Translates operator intent into structured inputs for the Vision-Language Model (VLM).
+4. **MCP Server**: Model Context Protocol server. Bridges the VLM and the drone SDK, converting tool calls into flight commands (takeoff, coordinate navigation).
+5. **Telemetry Service**: Telemetry collection service. Streams real-time drone telemetry to the Frontend and forwards captured frames to the Backend.
 6. **Database**: PostgreSQL.
 
 ---
 
-## Модули компьютерного зрения (AI)
+## Computer Vision Modules (AI)
 
-Для детекции и сегментации трещин на ортофотофасаде используются две независимые архитектуры нейронных сетей, обеспечивающие баланс между скоростью и точностью.
+Two neural network architectures are employed to balance inference speed with segmentation precision when inspecting facade orthomosaics.
 
 ### 1. Yolo26m
-Легковесная и быстрая модель для сегментации трещин и растительности на фасаде. Обучена на закрытом наборе данных.
-- **Датасет:** 8820 фотографий.
-- **Метрики:**
+A fast model for segmenting facade cracks and vegetation overgrowth. Trained on a specialized dataset.
+- **Dataset:** 8,820 images.
+- **Metrics:**
   - Mask Precision: 72.5%
   - Recall: 64.7%
   - mAP50: 69.2%
   - mAP50-95: 42.8%
 
 ### 2. Crack-SAM (Segment Anything Model)
-Специально дообученный адаптер на базе фундаментальной модели SAM (ViT-H) от Meta. Предназначен для прецизионного выделения масок трещин сложной формы.
-- **Датасет:** Открытый датасет трещин (Open source).
+A fine-tuned adapter based on Meta's SAM (ViT-H) foundation model, designed for high-precision segmentation of complex crack geometries.
+- **Dataset:** Open-source crack inspection dataset.
 
-### Размещение весовых файлов
-Для корректной работы сервиса компьютерного зрения необходимо загрузить веса моделей в директорию `weights` в корне бэкенда:
-- `backend/weights/yolo/best.pt` (также доступно переопределение через `YOLO_MODEL_PATH`).
+### Weights Placement
+Model weight files must be placed in the `weights` directory in the backend root:
+- `backend/weights/yolo/best.pt` (configurable via `YOLO_MODEL_PATH`).
 - `backend/weights/cracksam/CrackSAM_adapter_d32.pth`
 - `backend/weights/cracksam/sam_vit_h_4b8939.pth`
 
 ---
 
-## Принцип работы
+## How It Works
 
-1. **Инициация задания:** Оператор формирует текстовый запрос. `Agent Service` отправляет его в VLM.
-2. **Облет (Автопилот):** VLM через `Pioneer MCP` вызывает команды управления. Дрон выполняет облет. `Telemetry Service` передает координаты в браузер и пересылает отснятые кадры в `Backend`.
-3. **Фотограмметрия:** `Backend` запускает Agisoft Metashape. Производится выравнивание камер, построение плотного облака точек и экспорт ортомозаики фасада.
-4. **Детекция дефектов:** Ортофотофасад разбивается на тайлы (для сохранения детализации) и обрабатывается через Yolo26m или Crack-SAM.
-5. **Агрегация (NMS):** Результаты тайлинга объединяются с помощью Non-Maximum Suppression для устранения дублирующих боундбоксов. Готовый результат отдается клиенту.
+1. **Mission Initialization:** The operator submits a natural language request. `Agent Service` forwards it to the VLM.
+2. **Autonomous Flight:** The VLM invokes flight commands through `Pioneer MCP`. The drone performs the flight path. `Telemetry Service` broadcasts coordinates to the UI and routes photos to `Backend`.
+3. **Photogrammetry:** `Backend` triggers Agisoft Metashape for camera alignment, dense point cloud generation, and facade orthomosaic export.
+4. **Defect Detection:** The orthomosaic is sliced into tiles (preserving resolution) and processed through YOLOv8 or Crack-SAM.
+5. **Aggregation (NMS):** Tile detections are merged using Non-Maximum Suppression to eliminate duplicate bounding boxes, and the final results are served to the client.
 
 ---
 
-## Развертывание (Production vs Development)
+## Deployment (Production vs Development)
 
-Система предусматривает два сценария запуска: **Production** (целевая боевая среда) и **Development** (локальная разработка).
+The platform supports two deployment workflows: **Production** and **Development**.
 
-### 1. Боевая среда (Production)
+### 1. Production Environment
 
-В продакшене используется строгая изоляция микросервисов и максимальная оптимизация ресурсов:
-- **Бэкенд-инфраструктура:** Все сервисы (`backend`, `ai_service`, `telemetry_service`, `pioneer_mcp`, а также БД `PostgreSQL`) упаковываются в изолированные Docker-контейнеры. В репозитории уже подготовлены соответствующие `Dockerfile` для каждого компонента.
-- **Фронтенд:** Не использует Docker. SPA-приложение собирается в статику (`npm run build`) и раздается через высокопроизводительный веб-сервер (например, Nginx). Это снижает потребление памяти и ускоряет загрузку интерфейса для клиента.
+Production uses strict microservice isolation:
+- **Backend Infrastructure:** All services (`backend`, `ai_service`, `telemetry_service`, `pioneer_mcp`, and `PostgreSQL`) run in isolated Docker containers using the provided Dockerfiles.
+- **Frontend:** Compiled into static assets (`npm run build`) and served via a high-performance web server (e.g., Nginx) to optimize memory usage and load times.
 
-*(Примечание: На данный момент ведется работа по адаптации аппаратных лицензий Agisoft Metashape для работы внутри Docker-контейнеров).*
+*(Note: Work is ongoing to containerize hardware-locked Agisoft Metashape licenses).*
 
-### 2. Локальная разработка (Development - `start.sh`)
+### 2. Local Development (`start.sh`)
 
-Для локальной разработки, тестов и обхода временных ограничений с лицензиями Metashape (которые привязываются к MAC-адресу хост-машины) используется скрипт `start.sh`.
+The `start.sh` script orchestrates the mixed development environment, bypassing host-specific Metashape licensing restrictions:
+1. Starts **PostgreSQL** and the **Frontend (dev mode)** inside Docker (`docker-compose up -d`).
+2. Synchronizes and installs all Python dependencies with **uv** (`uv sync`).
+3. Launches all backend microservices (`backend`, `ai_service`, `telemetry_service`, `pioneer_mcp`) **natively on the host machine** as background processes.
+4. Handles graceful shutdown of processes and containers when exiting.
 
-Скрипт берет на себя всю рутину по оркестрации смешанной среды:
-1. Запускает **базу данных PostgreSQL** и **Frontend (в dev-режиме)** внутри Docker (через `docker-compose up -d`).
-2. Автоматически синхронизирует и устанавливает все Python-зависимости с помощью сверхбыстрого пакетного менеджера **uv** (`uv sync`).
-3. Поднимает все бэкенд-микросервисы (`backend`, `ai_service`, `telemetry_service`, `pioneer_mcp`) **нативно на хост-машине** в фоновых процессах.
-4. Обеспечивает корректное завершение всех процессов (graceful shutdown) и остановку контейнеров при закрытии скрипта.
-
-**Запуск среды разработки:**
+**Starting Development:**
 ```bash
 git clone https://github.com/ArduRadioKot/Geoscan_MOPS.git
 cd Geoscan_MOPS
 chmod +x start.sh
 ./start.sh
 ```
-После запуска скрипта интерфейс будет доступен по адресу: `http://localhost:5173`.
+The web interface will be available at `http://localhost:5173`.
 
 ---
 
-## Технологический стек
+## Tech Stack
 
 - **Frontend:** React 19, Vite, Styled Components.
 - **Backend:** FastAPI, PostgreSQL, Uvicorn, Python 3.12+.
@@ -230,4 +229,4 @@ chmod +x start.sh
 
 ---
 
-Проект разработан при поддержке компании **Геоскан**.
+Project developed with support from **Geoscan**.
