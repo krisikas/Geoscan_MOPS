@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { useCallback, useState } from 'react'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import './App.css'
 import Sidebar from './components/sidebar/Sidebar'
 import Loader from './components/loader/Loader'
@@ -12,8 +12,6 @@ import AuthPage from './pages/AuthPage/AuthPage'
 
 import { AuthProvider, useAuth } from './context/AuthContext'
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
-
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
   if (loading) return null;
@@ -24,32 +22,21 @@ const ProtectedRoute = ({ children }) => {
 };
 
 function AppContent() {
-  const { logout } = useAuth()
-  const navigate = useNavigate()
-  const [imageUrl, setImageUrl] = useState(null)
-  const [loadingMessage, setLoadingMessage] = useState(null)
+  const [loadingMessage] = useState(null)
   const [infoMessage, setInfoMessage] = useState(null)
   const [error, setError] = useState(null)
   
   const location = useLocation();
   const isAuthPage = location.pathname === '/auth' || location.pathname === '/';
 
-  useEffect(() => {
-    return () => {
-      if (imageUrl) {
-        URL.revokeObjectURL(imageUrl)
-      }
-    }
-  }, [imageUrl])
-
   const handleStartFlight = useCallback(async () => {
     setError(null)
     setInfoMessage(null)
-  }, [logout, navigate])
+  }, [])
 
   return (
     <div className="app">
-      <BackgroundWaves />
+      {isAuthPage && <BackgroundWaves />}
       {/* Hide Sidebar on auth and main landing page for a cleaner look */}
       {!isAuthPage && <Sidebar />}
       

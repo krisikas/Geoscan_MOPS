@@ -130,3 +130,20 @@
 .auth-toggle-btn:hover {
   text-decoration: underline;
 }
+
+.auth-error {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  padding: 12px;
+  margin-bottom: 20px;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  line-height: 1.5;
+}
+@media (max-width: 600px) {
+  .auth-container { padding: 80px 16px 24px; }
+  .auth-back-link { top: 24px; left: 24px; }
+  .auth-card { padding: 28px 24px; }
+  .auth-footer { line-height: 1.8; }
+}

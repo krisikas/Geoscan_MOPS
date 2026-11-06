@@ -47,14 +47,14 @@ export default function AuthPage() {
             : 'Создайте аккаунт для работы с системой мониторинга GEOSCAN MOPS.'}
         </p>
         
-        {error && <div className="auth-error" style={{color: 'red', marginBottom: '15px'}}>{error}</div>}
+        {error && <div className="auth-error" role="alert">{error}</div>}
 
         <form onSubmit={handleSubmit} className="auth-form">
           {!isLogin && (
             <div className="form-group">
-              <label>Ваше имя</label>
+              <label htmlFor="auth-name">Ваше имя</label>
               <input 
-                type="text" 
+                id="auth-name" autoComplete="name" type="text"
                 placeholder="Иван Иванов"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -64,9 +64,9 @@ export default function AuthPage() {
           )}
           
           <div className="form-group">
-            <label>Электронная почта</label>
+            <label htmlFor="auth-email">Электронная почта</label>
             <input 
-              type="email" 
+              id="auth-email" autoComplete="email" type="email"
               placeholder="engineer@geoscan.aero"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -74,9 +74,9 @@ export default function AuthPage() {
             />
           </div>
           <div className="form-group">
-            <label>Пароль</label>
+            <label htmlFor="auth-password">Пароль</label>
             <input 
-              type="password" 
+              id="auth-password" autoComplete={isLogin ? 'current-password' : 'new-password'} type="password"
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}

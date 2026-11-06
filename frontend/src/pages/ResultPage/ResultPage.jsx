@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import './ResultPage.css';
 import ImageViewer from '../../components/imageViewer/imageViewer';
 import AdvancedModelViewer from '../../components/imageViewer/AdvancedModelViewer';
-import { Box, Image as ImageIcon, CheckCircle2, Upload, BoxSelect, Plus, X, Trash2, Sparkles } from 'lucide-react';
+import { Box, Image as ImageIcon, CheckCircle2, Upload, BoxSelect, Plus, X, Trash2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate, useParams } from 'react-router-dom';
 
@@ -10,7 +11,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
 
 export default function ResultPage() {
-  const { logout, user } = useAuth();
+  const { logout } = useAuth();
   const navigate = useNavigate();
   const { projectId: urlProjectId } = useParams();
   
@@ -18,16 +19,35 @@ export default function ResultPage() {
   const [activeProject, setActiveProject] = useState(null);
   const [images, setImages] = useState({ projectId: null, ai_input: [], ai_output_yolo: [], ai_output_cracksam: [], metashape_input: [], metashape_output: [], metashape_ai_output_yolo: [], metashape_ai_output_cracksam: [], thermal_input: [] });
   const [activeGroup, setActiveGroup] = useState('ai');
-  const [showAIOutput, setShowAIOutput] = useState(false);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [fullscreenImageIndex, setFullscreenImageIndex] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [selectedAIModels, setSelectedAIModels] = useState(['yolo']);
+  const [selectedAIModels] = useState(['yolo']);
   const [errorMsg, setErrorMsg] = useState(null);
   const [projectStatus, setProjectStatus] = useState({ ai: 'idle', metashape: 'idle', error: null });
   const [processingImages, setProcessingImages] = useState(new Set());
   const activeRequests = useRef(new Set());
+  const tabsRef = useRef(null);
+  const viewerTriggerRef = useRef(null);
+
+  useEffect(() => {
+    const tabs = tabsRef.current;
+    if (!tabs) return;
+    const revealSelectedTab = () => {
+      const selected = tabs.querySelector('[aria-pressed="true"]');
+      if (!selected) return;
+      const bounds = tabs.getBoundingClientRect();
+      const item = selected.getBoundingClientRect();
+      const delta = item.right > bounds.right ? item.right - bounds.right + 4
+        : item.left < bounds.left ? item.left - bounds.left - 4 : 0;
+      if (delta) tabs.scrollBy({ left: delta, behavior: 'auto' });
+    };
+    revealSelectedTab();
+    const observer = new ResizeObserver(revealSelectedTab);
+    observer.observe(tabs);
+    return () => observer.disconnect();
+  }, [activeGroup, activeProject?.id]);
 
   const showError = (msg) => {
     setErrorMsg(msg);
@@ -42,7 +62,7 @@ export default function ResultPage() {
     if (res.status === 401) { logout(); navigate('/auth'); throw new Error('Unauthorized'); }
     if (!res.ok && !options.skipError) {
         let msg = 'Ошибка сервера';
-        try { const data = await res.json(); msg = data.detail || msg; } catch(e) {}
+        try { const data = await res.json(); msg = data.detail || msg; } catch { /* Ignore optional cleanup or malformed stream data. */ }
         showError(msg);
         throw new Error(msg);
     }
@@ -116,7 +136,7 @@ export default function ResultPage() {
       setImages({ projectId: null, ai_input: [], ai_output_yolo: [], ai_output_cracksam: [], metashape_input: [], metashape_project: [], metashape_ai_output_yolo: [], metashape_ai_output_cracksam: [], thermal_input: [] });
       setObjectUrls(prev => {
           Object.values(prev).forEach(url => {
-              try { URL.revokeObjectURL(url); } catch (e) {}
+              try { URL.revokeObjectURL(url); } catch { /* Ignore optional cleanup or malformed stream data. */ }
           });
           return {};
       });
@@ -151,7 +171,7 @@ export default function ResultPage() {
                 fetchImages(activeProject.id);
             }
             lastStatus = data;
-        } catch(e) {}
+        } catch { /* Ignore optional cleanup or malformed stream data. */ }
     };
 
     return () => eventSource.close();
@@ -240,7 +260,7 @@ export default function ResultPage() {
       const key = `${activeProject.id}_${group}_${filename}`;
       setObjectUrls(prev => {
           if (prev[key]) {
-              try { URL.revokeObjectURL(prev[key]); } catch (e) {}
+              try { URL.revokeObjectURL(prev[key]); } catch { /* Ignore optional cleanup or malformed stream data. */ }
               const next = { ...prev };
               delete next[key];
               return next;
@@ -253,8 +273,8 @@ export default function ResultPage() {
           const outKeyCrack = `${activeProject.id}_ai_output_cracksam_${filename.replace(/\.[^/.]+$/, ".png")}`;
           setObjectUrls(prev => {
               const next = { ...prev };
-              if (next[outKeyYolo]) { try { URL.revokeObjectURL(next[outKeyYolo]); } catch(e){} delete next[outKeyYolo]; }
-              if (next[outKeyCrack]) { try { URL.revokeObjectURL(next[outKeyCrack]); } catch(e){} delete next[outKeyCrack]; }
+              if (next[outKeyYolo]) { try { URL.revokeObjectURL(next[outKeyYolo]); } catch { /* Ignore optional cleanup or malformed stream data. */ } delete next[outKeyYolo]; }
+              if (next[outKeyCrack]) { try { URL.revokeObjectURL(next[outKeyCrack]); } catch { /* Ignore optional cleanup or malformed stream data. */ } delete next[outKeyCrack]; }
               return next;
           });
       } else if (group === 'metashape_input') {
@@ -262,14 +282,14 @@ export default function ResultPage() {
           const outKeyCrack = `${activeProject.id}_metashape_ai_output_cracksam_${filename.replace(/\.[^/.]+$/, ".png")}`;
           setObjectUrls(prev => {
               const next = { ...prev };
-              if (next[outKeyYolo]) { try { URL.revokeObjectURL(next[outKeyYolo]); } catch(e){} delete next[outKeyYolo]; }
-              if (next[outKeyCrack]) { try { URL.revokeObjectURL(next[outKeyCrack]); } catch(e){} delete next[outKeyCrack]; }
+              if (next[outKeyYolo]) { try { URL.revokeObjectURL(next[outKeyYolo]); } catch { /* Ignore optional cleanup or malformed stream data. */ } delete next[outKeyYolo]; }
+              if (next[outKeyCrack]) { try { URL.revokeObjectURL(next[outKeyCrack]); } catch { /* Ignore optional cleanup or malformed stream data. */ } delete next[outKeyCrack]; }
               return next;
           });
       }
 
       fetchImages(activeProject.id);
-    } catch (e) {}
+    } catch { /* Ignore optional cleanup or malformed stream data. */ }
   };
 
   const [objectUrls, setObjectUrls] = useState({});
@@ -278,7 +298,7 @@ export default function ResultPage() {
     return () => {
       setObjectUrls(prev => {
         Object.values(prev).forEach(url => {
-          try { URL.revokeObjectURL(url); } catch (e) {}
+          try { URL.revokeObjectURL(url); } catch { /* Ignore optional cleanup or malformed stream data. */ }
         });
         return {};
       });
@@ -312,7 +332,7 @@ export default function ResultPage() {
                     newUrls[key] = URL.createObjectURL(blob);
                     changed = true;
                 }
-            } catch(e) {}
+            } catch { /* Ignore optional cleanup or malformed stream data. */ }
         }
         if (changed) {
             setObjectUrls(prev => ({ ...prev, ...newUrls }));
@@ -321,6 +341,21 @@ export default function ResultPage() {
     
     fetchMissing();
   }, [images, activeProject?.id, objectUrls]);
+
+  const isViewerOpen = fullscreenImageIndex !== null;
+  useEffect(() => {
+    if (!isViewerOpen) return;
+    const root = document.getElementById('root');
+    const previousInert = root?.inert;
+    const previousOverflow = document.body.style.overflow;
+    if (root) root.inert = true;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      if (root) root.inert = previousInert;
+      document.body.style.overflow = previousOverflow;
+      viewerTriggerRef.current?.focus();
+    };
+  }, [isViewerOpen]);
 
   const folderKey = activeGroup === 'ai' ? 'ai_input' : (activeGroup === 'thermal' ? 'thermal_input' : (activeGroup === 'metashape' ? 'metashape_input' : 'metashape_project'));
   const currentGroupImages = activeGroup === 'ai' ? images.ai_input : (activeGroup === 'thermal' ? images.thermal_input : (activeGroup === 'metashape' ? images.metashape_input : (images.metashape_project || []).filter(img => img.toLowerCase().endsWith('.glb') || img.toLowerCase().endsWith('.gltf'))));
@@ -358,7 +393,7 @@ export default function ResultPage() {
                   const outGroup = folderKey === 'ai_input' ? `ai_output_${model}` : `metashape_ai_output_${model}`;
                   const key = `${activeProject.id}_${outGroup}_${maskImgName}`;
                   if (next[key]) {
-                      try { URL.revokeObjectURL(next[key]); } catch(e) {}
+                      try { URL.revokeObjectURL(next[key]); } catch { /* Ignore optional cleanup or malformed stream data. */ }
                       delete next[key];
                   }
               }
@@ -376,6 +411,10 @@ export default function ResultPage() {
   };
 
   const [isClosingModal, setIsClosingModal] = useState(false);
+  const openViewer = (index) => {
+      viewerTriggerRef.current = document.activeElement;
+      setFullscreenImageIndex(index);
+  };
   const handleCloseModal = () => {
       setIsClosingModal(true);
       setTimeout(() => {
@@ -384,32 +423,24 @@ export default function ResultPage() {
       }, 300);
   };
 
+  const showMetashapeAction = (activeGroup === 'metashape' || activeGroup === 'metashape_result')
+    && projectStatus.metashape !== 'processing'
+    && images.metashape_input?.length > 0
+    && !(activeGroup === 'metashape_result' && currentGroupImages.length === 0);
+
   return (
     <div className="result-page page-transition">
-      {errorMsg && (
-        <div className="app-status-panel">
-            <span className="app-status app-status--error">{errorMsg}</span>
-        </div>
-      )}
-      {projectStatus.error && (
-        <div className="app-status-panel">
-            <div className="app-status-error-container">
-                <span className="app-status app-status--error">{projectStatus.error}</span>
-                <button onClick={() => setProjectStatus(prev => ({ ...prev, error: null }))} className="app-status-close-btn" title="Скрыть ошибку"><X size={16} /></button>
-            </div>
-        </div>
-      )}
       <div className="projects-sidebar">
         <div className="sidebar-header-row">
             <h2 className="sidebar-title">Проекты</h2>
-            <button className="btn-icon-small" onClick={() => setIsCreatingProject(!isCreatingProject)}>
+            <button className="result-icon-button" title="Создать проект" aria-label="Создать проект" aria-expanded={isCreatingProject} onClick={() => setIsCreatingProject(!isCreatingProject)}>
                 <Plus size={16}/>
             </button>
         </div>
         
         {isCreatingProject && (
-            <div className="create-project-form">
-                <input type="text" placeholder="Имя проекта" value={newProjectName} onChange={e => setNewProjectName(e.target.value)} />
+            <div className="result-create-project">
+                <input type="text" aria-label="Имя проекта" placeholder="Имя проекта" value={newProjectName} onChange={e => setNewProjectName(e.target.value)} />
                 <button onClick={handleCreateProject}>Создать</button>
             </div>
         )}
@@ -418,8 +449,8 @@ export default function ResultPage() {
           {projects.map(project => (
             <div key={project.id} className={`project-card ${activeProject?.id === project.id ? 'active' : ''}`} onClick={() => navigate(`/result/${project.id}`)}>
               <div className="project-header">
-                <h3>{project.name}</h3>
-                <button className="delete-btn" onClick={(e) => handleDeleteProject(project.id, e)}><Trash2 size={14}/></button>
+                <h3><button className="project-select-button" onClick={() => navigate(`/result/${project.id}`)} aria-current={activeProject?.id === project.id ? 'true' : undefined}>{project.name}</button></h3>
+                <button className="delete-btn" aria-label={`Удалить проект «${project.name}»`} onClick={(e) => handleDeleteProject(project.id, e)}><Trash2 size={14}/></button>
               </div>
               <div className="project-meta">
                 <span>{new Date(project.created_at).toLocaleDateString()}</span>
@@ -432,50 +463,69 @@ export default function ResultPage() {
         {activeProject && (
         <div className="upload-section">
           <label className="upload-btn primary">
-            <Upload size={16} /> Metashape загрузка
-            <input type="file" multiple accept="image/*" style={{ display: 'none' }} onChange={(e) => handleUpload(e.target.files, 'metashape')} />
+            <Upload size={16} /> Снимки Metashape
+            <input type="file" multiple accept="image/*" onChange={(e) => handleUpload(e.target.files, 'metashape')} />
           </label>
           <label className="upload-btn secondary">
-            <ImageIcon size={16} /> Одиночные для ИИ
-            <input type="file" multiple accept="image/*" style={{ display: 'none' }} onChange={(e) => handleUpload(e.target.files, 'ai')} />
+            <ImageIcon size={16} /> Фото для ИИ
+            <input type="file" multiple accept="image/*" onChange={(e) => handleUpload(e.target.files, 'ai')} />
           </label>
         </div>
         )}
       </div>
 
       <div className="project-content">
+      {errorMsg && errorMsg !== projectStatus.error && (
+        <div className="result-notice" role="alert">
+            <span className="app-status app-status--error">{errorMsg}</span>
+        </div>
+      )}
+      {projectStatus.error && (
+        <div className="result-notice" role="alert">
+            <div className="app-status-error-container">
+                <span className="app-status app-status--error">{projectStatus.error}</span>
+                <button onClick={() => setProjectStatus(prev => ({ ...prev, error: null }))} className="app-status-close-btn" title="Скрыть ошибку"><X size={16} /></button>
+            </div>
+        </div>
+      )}
+
         {!activeProject ? (
             <div className="placeholder-3d"><BoxSelect size={48} className="placeholder-icon"/><p>Выберите проект слева</p></div>
         ) : (
         <>
         <header className="content-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+          <div className="content-heading">
             <h1 className="content-title">{activeProject.name}</h1>
             
-            {(activeGroup === 'metashape' || activeGroup === 'metashape_result') && projectStatus.metashape !== 'processing' && images?.metashape_input?.length > 0 && (
-                <button className="process-btn process-btn--metashape" onClick={() => handleProcess('metashape')} disabled={isUploading}>
-                    <CheckCircle2 size={14} /> Собрать 3D-модель
+            <div className="content-heading-action">
+                <button
+                    className={`metashape-button metashape-button--secondary ${showMetashapeAction ? '' : 'metashape-button--placeholder'}`}
+                    onClick={() => handleProcess('metashape')}
+                    disabled={isUploading || !showMetashapeAction}
+                    aria-hidden={!showMetashapeAction}
+                    tabIndex={showMetashapeAction ? 0 : -1}
+                >
+                    <Box size={16} /> Собрать 3D-модель
                 </button>
-            )}
-            
-            {projectStatus.metashape === 'processing' && (
-                <span style={{ fontSize: '13px', color: '#a0a0a0', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <div className="premium-loader" style={{ width: '14px', height: '14px', borderWidth: '2px' }}></div> 
+                {projectStatus.metashape === 'processing' && (
+                <span className="metashape-progress" role="status">
+                    <span className="premium-loader" aria-hidden="true"></span>
                     Идет сборка модели...
                 </span>
-            )}
+                )}
+            </div>
           </div>
-          <div className="tabs">
-            <button className={`tab-btn ${activeGroup === 'ai' ? 'active' : ''}`} onClick={() => setActiveGroup('ai')}>
+          <div ref={tabsRef} className="tabs" role="group" aria-label="Разделы результатов">
+            <button className={`tab-btn ${activeGroup === 'ai' ? 'active' : ''}`} aria-pressed={activeGroup === 'ai'} onClick={() => setActiveGroup('ai')}>
               <ImageIcon size={18} /> Фото для ИИ
             </button>
-            <button className={`tab-btn ${activeGroup === 'thermal' ? 'active' : ''}`} onClick={() => setActiveGroup('thermal')}>
+            <button className={`tab-btn ${activeGroup === 'thermal' ? 'active' : ''}`} aria-pressed={activeGroup === 'thermal'} onClick={() => setActiveGroup('thermal')}>
               <ImageIcon size={18} /> Тепловизор
             </button>
-            <button className={`tab-btn ${activeGroup === 'metashape' ? 'active' : ''}`} onClick={() => setActiveGroup('metashape')}>
+            <button className={`tab-btn ${activeGroup === 'metashape' ? 'active' : ''}`} aria-pressed={activeGroup === 'metashape'} onClick={() => setActiveGroup('metashape')}>
               <Box size={18} /> Исходники Metashape
             </button>
-            <button className={`tab-btn ${activeGroup === 'metashape_result' ? 'active' : ''}`} onClick={() => setActiveGroup('metashape_result')}>
+            <button className={`tab-btn ${activeGroup === 'metashape_result' ? 'active' : ''}`} aria-pressed={activeGroup === 'metashape_result'} onClick={() => setActiveGroup('metashape_result')}>
               <CheckCircle2 size={18} /> Результаты Metashape
             </button>
           </div>
@@ -492,7 +542,7 @@ export default function ResultPage() {
                             const is3DModel = img.toLowerCase().endsWith('.glb') || img.toLowerCase().endsWith('.gltf');
                             
                             return (
-                            <div key={i} className={`gallery-thumbnail ${isProc ? 'processing' : ''}`} onClick={() => !isProc && !is3DModel && setFullscreenImageIndex(i)} style={{ position: 'relative', gridColumn: is3DModel ? '1 / -1' : 'auto', height: is3DModel ? '500px' : 'auto' }}>
+                            <div key={i} className={`gallery-thumbnail ${isProc ? 'processing' : ''} ${is3DModel ? 'gallery-thumbnail--model' : ''}`} onClick={() => !isProc && !is3DModel && openViewer(i)}>
                                 {url ? (
                                     is3DModel ? (
                                         <div style={{ width: '100%', height: '100%', position: 'relative', borderRadius: '12px', overflow: 'hidden' }} id={`model-container-${i}`}>
@@ -503,7 +553,7 @@ export default function ResultPage() {
                                             <button 
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    setFullscreenImageIndex(i);
+                                                    openViewer(i);
                                                 }}
                                                 style={{ position: 'absolute', top: '15px', right: '15px', background: 'rgba(0,0,0,0.6)', border: 'none', color: '#fff', padding: '8px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                                                 title="Открыть в режиме просмотра"
@@ -512,7 +562,10 @@ export default function ResultPage() {
                                             </button>
                                         </div>
                                     ) : (
+                                      <>
+                                        <button className="gallery-open" disabled={isProc} aria-label={`Открыть снимок ${i + 1}`} />
                                         <img src={url} alt={`Снимок ${i+1}`} loading="lazy" style={{ opacity: isProc ? 0.5 : 1, transition: '0.3s' }} />
+                                      </>
                                     )
                                 ) : <div className="loading-placeholder">Загрузка...</div>}
                                 
@@ -534,15 +587,16 @@ export default function ResultPage() {
                     })
                 ) : (
                     activeGroup === 'metashape_result' ? (
-                        <div className="gallery-empty" style={{ display: 'flex', flexDirection: 'column', gap: '15px', alignItems: 'center', padding: '60px 20px' }}>
+                        <div className="gallery-empty model-empty">
                             <Box size={48} opacity={0.3} />
                             {projectStatus.metashape === 'processing' ? (
                                 <p>Модель находится в процессе сборки...</p>
                             ) : (
                                 <>
-                                    <p>3D-модель еще не собрана.</p>
-                                    <button className="process-btn process-btn--generate" onClick={() => { handleProcess('metashape'); }} disabled={isUploading || !images.metashape_input?.length}>
-                                        <Sparkles size={20} /> Запустить генерацию 3D-модели
+                                    <p>{projectStatus.metashape === 'error' ? 'Не удалось собрать 3D-модель.' : '3D-модель еще не собрана.'}</p>
+                                    {!images.metashape_input?.length && <p className="model-empty-hint">Загрузите исходные снимки через панель слева.</p>}
+                                    <button className="metashape-button metashape-button--primary" onClick={() => { handleProcess('metashape'); }} disabled={isUploading || !images.metashape_input?.length}>
+                                        <Box size={18} /> Собрать 3D-модель
                                     </button>
                                 </>
                             )}
@@ -558,10 +612,11 @@ export default function ResultPage() {
         )}
       </div>
       
-      {fullscreenImageIndex !== null && (
-        <div className={`fullscreen-modal ${isClosingModal ? 'closing' : ''}`} onClick={handleCloseModal}>
+      {fullscreenImageIndex !== null && createPortal(
+        <div role="dialog" aria-modal="true" aria-label="Просмотр результата" className={`fullscreen-modal ${isClosingModal ? 'closing' : ''}`} onClick={handleCloseModal}>
             <div className={`fullscreen-content ${isClosingModal ? 'closing' : ''}`} onClick={e => e.stopPropagation()}>
                 <ImageViewer 
+                    key={`${activeProject.id}_${folderKey}`}
                     globalImages={images}
                     images={currentGroupImages}
                     currentIndex={fullscreenImageIndex}
@@ -579,7 +634,7 @@ export default function ResultPage() {
                     aiModels={projectStatus.ai_models?.length ? projectStatus.ai_models : selectedAIModels}
                 />
             </div>
-        </div>
+        </div>, document.body
       )}
     </div>
   );

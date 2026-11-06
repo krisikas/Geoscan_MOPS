@@ -50,8 +50,8 @@
 
 .nav-item--active {
   color: var(--color-text-primary);
-  background: rgba(255, 255, 255, 0.06);
-  box-shadow: inset 3px 0 0 var(--color-accent);
+  background: transparent;
+  font-weight: 600;
 }
 
 .nav-icon {
@@ -68,7 +68,7 @@
 }
 
 .nav-item--active .nav-icon {
-  color: var(--color-accent);
+  color: var(--color-text-primary);
 }
 
 .sidebar-bottom {
@@ -181,4 +181,33 @@
 .sidebar-logout-btn:hover {
   background: rgba(239, 68, 68, 0.2);
   color: #f87171;
+}
+
+.app-sidebar { min-height: 0; overflow-y: auto; }
+.nav-item { min-height: 44px; }
+.nav-item--active:hover { background: rgba(255, 255, 255, 0.04); }
+.sidebar-user-info { min-width: 0; }
+.user-name { overflow-wrap: anywhere; }
+
+@media (max-width: 1600px) {
+  .app-sidebar { width: 240px; padding: 28px 16px; }
+  .brand { padding-left: 0; }
+}
+@media (max-width: 1200px) {
+  .app-sidebar { width: 210px; padding: 24px 12px; }
+  .app-sidebar .landing-logo { font-size: 15px !important; gap: 4px; }
+  .app-sidebar .brand img { height: 20px !important; }
+  .nav-item { gap: 12px; }
+}
+@media (max-width: 700px) {
+  .app-sidebar { width: 100%; height: auto; padding: 16px; gap: 16px; }
+  .brand { margin-bottom: 16px; }
+  .nav-menu { flex-direction: row; flex-wrap: wrap; }
+  .nav-item { padding: 10px 12px; }
+  .sidebar-user-card { flex-direction: row; align-items: center; justify-content: space-between; margin-top: 0; padding: 12px; }
+  .sidebar-logout-btn { width: auto; flex-shrink: 0; }
+}
+@media (max-height: 650px) and (min-width: 701px) {
+  .app-sidebar { padding-top: 20px; padding-bottom: 20px; }
+  .brand { margin-bottom: 24px; }
 }

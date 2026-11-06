@@ -200,7 +200,7 @@ export default function MissionPage({ onStartFlight, loadingMessage, infoMessage
       if (response.status === 401) { logout(); navigate('/auth'); return; }
       if (!response.ok) {
          let errorText = 'Ошибка сервера';
-         try { const errorData = await response.json(); errorText = errorData.detail || errorText; } catch(e) {}
+         try { const errorData = await response.json(); errorText = errorData.detail || errorText; } catch { /* Ignore optional cleanup or malformed stream data. */ }
          throw new Error(errorText);
       }
 
@@ -257,7 +257,7 @@ export default function MissionPage({ onStartFlight, loadingMessage, infoMessage
         try {
             const data = JSON.parse(event.data);
             setMessages(prev => [...prev, data]);
-        } catch (e) {
+        } catch {
             setMessages(prev => [...prev, { role: 'ai', content: event.data }]);
         }
     };
@@ -289,7 +289,7 @@ export default function MissionPage({ onStartFlight, loadingMessage, infoMessage
             } else if (tdata.type === "thermal") {
                 setThermalFeed(tdata.image);
             }
-        } catch (err) {}
+        } catch { /* Ignore optional cleanup or malformed stream data. */ }
     };
   };
 
@@ -328,7 +328,7 @@ export default function MissionPage({ onStartFlight, loadingMessage, infoMessage
             
             <div className="project-selector-row">
                 <select 
-                    className="project-select" 
+                    className="project-select" aria-label="Текущий проект"
                     value={activeProject?.id || ''} 
                     onChange={(e) => {
                         const p = projects.find(x => x.id === parseInt(e.target.value));
@@ -342,16 +342,16 @@ export default function MissionPage({ onStartFlight, loadingMessage, infoMessage
                     <option value="" disabled>Выберите проект</option>
                     {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
-                <button className="btn-icon-small" onClick={() => setIsCreatingProject(!isCreatingProject)}>
+                <button className="mission-icon-button" title="Создать проект" aria-label="Создать проект" aria-expanded={isCreatingProject} onClick={() => setIsCreatingProject(!isCreatingProject)}>
                     <Plus size={16} />
                 </button>
             </div>
             
             {isCreatingProject && (
-                <div className="create-project-form">
+                <div className="mission-create-project">
                     <input 
                         type="text" 
-                        placeholder="Название..." 
+                        aria-label="Название проекта" placeholder="Название..."
                         value={newProjectName} 
                         onChange={e => setNewProjectName(e.target.value)} 
                     />
@@ -393,7 +393,7 @@ export default function MissionPage({ onStartFlight, loadingMessage, infoMessage
                   if (match) {
                       const toolName = match[1];
                       let toolArgs = match[2];
-                      try { toolArgs = JSON.parse(toolArgs); } catch (e) {}
+                      try { toolArgs = JSON.parse(toolArgs); } catch { /* Ignore optional cleanup or malformed stream data. */ }
                       
                       return (
                         <div key={idx} className="chat-bubble-wrapper left">
@@ -408,7 +408,7 @@ export default function MissionPage({ onStartFlight, loadingMessage, infoMessage
               return (
                 <div key={idx} className={`chat-bubble-wrapper ${msg.role === 'user' ? 'right' : 'left'}`}>
                   <div className={`chat-bubble chat-bubble--${msg.role} ${msg.isError ? 'error-bubble' : ''}`}>
-                    {msg.content}
+                    {msg.content || msg.text}
                   </div>
                 </div>
               );
@@ -432,7 +432,7 @@ export default function MissionPage({ onStartFlight, loadingMessage, infoMessage
             <textarea
               ref={textareaRef}
               className="chat-input" 
-              placeholder={activeProject ? "Введите параметры объекта или команды..." : "Создайте проект для начала..."} 
+              placeholder={activeProject ? "Опишите задачу…" : "Создайте проект для начала..."}
               value={chatInput}
               rows={1}
               onChange={handleInput}

@@ -47,7 +47,7 @@ export default function MainPage() {
           <div className="feature-card">
             <div className="feature-icon-wrapper"><Scan size={28} /></div>
             <h3>Фотограмметрия</h3>
-            <p>Интеграция с Metashape позволяет собирать высокоточные 3D-модели объектов прямо в браузере.</p>
+            <p>Интеграция с Metashape позволяет собирать 3D-модели объектов на сервере и просматривать их в браузере.</p>
           </div>
           
           <div className="feature-card">

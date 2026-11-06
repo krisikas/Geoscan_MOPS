@@ -1,32 +1,45 @@
-import React, { Suspense, useRef } from 'react';
+import React, { Suspense, Component, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { useGLTF, TrackballControls, Bounds, Center, Environment, GizmoHelper, GizmoViewport } from '@react-three/drei';
+import { useGLTF, TrackballControls, Bounds, Center, Environment, GizmoHelper, GizmoViewport, Html } from '@react-three/drei';
 
 function Model({ url, rotationFix }) {
   const { scene } = useGLTF(url);
+  const instance = useMemo(() => scene.clone(true), [scene]);
   
-  // Clone the scene so we don't mutate the cached one, though in this case it might be okay.
   return (
     <primitive 
-      object={scene} 
+      object={instance}
       rotation={rotationFix ? [-Math.PI / 2, 0, 0] : [0, 0, 0]} 
     />
   );
 }
 
+class ModelErrorBoundary extends Component {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  render() {
+    if (this.state.failed) {
+      return <div className="model-error" role="alert">Не удалось открыть 3D-модель. Проверьте файл и подключение к сети, затем откройте просмотр повторно.</div>;
+    }
+    return this.props.children;
+  }
+}
+
 const AdvancedModelViewer = ({ src, rotationFix = true }) => {
   return (
-    <div style={{ width: '100%', height: '100%', background: '#09090b', position: 'relative' }}>
+    <div className="model-viewer-shell">
+      <ModelErrorBoundary key={src}>
       <Canvas camera={{ position: [0, 0, 5], fov: 50 }}>
         <color attach="background" args={['#09090b']} />
         <ambientLight intensity={0.5} />
         <directionalLight position={[10, 10, 5]} intensity={1.5} />
         <directionalLight position={[-10, -10, -5]} intensity={0.5} />
         
-        {/* Temporary axes for debugging */}
-        <axesHelper args={[5]} />
-        
-        <Suspense fallback={null}>
+        <Suspense fallback={<Html center><div className="model-loading" role="status">Загрузка модели…</div></Html>}>
           <Environment preset="city" />
           <Bounds fit clip observe margin={1.2}>
             <Center>
@@ -47,7 +60,8 @@ const AdvancedModelViewer = ({ src, rotationFix = true }) => {
           rotateSpeed={3.0}
         />
       </Canvas>
-      <div style={{ position: 'absolute', bottom: '15px', left: '15px', color: 'rgba(255,255,255,0.5)', fontSize: '12px', pointerEvents: 'none' }}>
+      </ModelErrorBoundary>
+      <div className="model-viewer-hint">
         ЛКМ - вращение | ПКМ - панорамирование | Колесико - зум
       </div>
     </div>

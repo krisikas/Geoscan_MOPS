@@ -154,29 +154,10 @@
   justify-content: center;
   height: 100%;
   width: 100%;
-  min-height: 400px;
-  min-width: 400px;
+  min-height: 0;
+  min-width: 0;
 }
 
-.process-btn {
-  background: rgba(224, 38, 0, 0.1) !important;
-  border: 1px solid rgba(224, 38, 0, 0.4) !important;
-  color: #ff5e3a !important;
-  width: auto;
-  padding: 0 16px;
-  border-radius: 20px;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 500;
-}
-.process-btn:hover:not(:disabled) {
-  background: rgba(224, 38, 0, 0.3) !important;
-  transform: scale(1.05) !important;
-}
-.process-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
 .rotating {
   animation: spin 2s linear infinite;
 }
@@ -268,3 +249,65 @@
   flex-shrink: 0;
   box-shadow: inset 0 0 0 1px rgba(0,0,0,0.2), 0 2px 4px rgba(0,0,0,0.3);
 }
+
+.image-viewer__controls-wrapper { max-width: calc(100% - 32px); }
+.image-viewer__controls { flex-wrap: wrap; justify-content: center; max-width: 100%; }
+.image-viewer__legend { flex-wrap: wrap; justify-content: center; max-width: 100%; }
+.image-viewer__btn { flex-shrink: 0; }
+.image-viewer__segmented-control { flex-shrink: 0; }
+.image-viewer__layer-source { max-height: 100dvh; }
+.image-viewer__close {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 102;
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+}
+.image-viewer__error {
+  position: absolute;
+  top: 64px;
+  left: 16px;
+  right: 16px;
+  color: var(--color-text-primary);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  text-align: center;
+  z-index: 102;
+}
+@media (max-width: 700px) {
+  .image-viewer__controls-wrapper { bottom: 16px; }
+  .image-viewer__segmented-control { margin-right: 0; }
+  .image-viewer__segmented-control .segmented-btn { padding: 8px 12px; }
+  .nav-arrow { width: 40px; height: 40px; }
+  .nav-arrow--left { left: 8px; }
+  .nav-arrow--right { right: 8px; }
+  .image-viewer__legend { gap: 8px 12px; }
+}
+
+.model-viewer-shell {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  background: #09090b;
+}
+.model-viewer-hint {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  max-width: calc(100% - 110px);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  pointer-events: none;
+}
+.model-loading, .model-error {
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: center;
+}
+.model-loading { white-space: nowrap; }
+.model-error { display: grid; place-content: center; height: 100%; padding: 24px; }

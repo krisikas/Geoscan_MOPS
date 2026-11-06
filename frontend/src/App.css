@@ -205,3 +205,39 @@ body {
   border-color: var(--color-success);
   color: var(--color-success);
 }
+/* Shared layout safeguards; keep the existing visual language and motion. */
+.app-content {
+  min-width: 0;
+}
+
+button, input, select, textarea {
+  font-family: inherit;
+}
+
+button svg, .upload-btn svg, .nav-icon {
+  flex-shrink: 0;
+}
+
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-accent-hover);
+  outline-offset: 3px;
+}
+
+.btn-primary, .btn-secondary {
+  min-height: 40px;
+}
+
+@media (max-width: 700px) {
+  .app { flex-direction: column; }
+  .app-status-panel { width: calc(100% - 32px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

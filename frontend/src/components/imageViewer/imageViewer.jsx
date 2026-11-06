@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight, RefreshCw, ZoomIn, ZoomOut, RefreshCcw, X } 
 import './imageViewer.css';
 import AdvancedModelViewer from './AdvancedModelViewer';
 
-const ImageViewer = ({ 
+const ImageViewerContent = ({
   globalImages,
   images, 
   currentIndex, 
@@ -13,19 +13,19 @@ const ImageViewer = ({
   projectId, 
   objectUrls, 
   startSingleProcess,
-  aiModels = ['yolo']
+  showYolo, setShowYolo, showCrackSam, setShowCrackSam,
 }) => {
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   
-  const [showYolo, setShowYolo] = useState(false);
-  const [showCrackSam, setShowCrackSam] = useState(false);
-  const [isProcessingLocal, setIsProcessingLocal] = useState(false);
+  const [processingError, setProcessingError] = useState(null);
+  const requestedModels = useRef(new Set());
   
   const [modelRotation, setModelRotation] = useState(-90); // Metashape Z-up fix
   
+  const closeButtonRef = useRef(null);
   const imageRef = useRef(null);
   const containerRef = useRef(null);
 
@@ -90,29 +90,42 @@ const ImageViewer = ({
   const hasYolo = currentImg ? globalImages[yoloFolder]?.includes(maskImgName) : false;
   const hasCrack = currentImg ? globalImages[crackFolder]?.includes(maskImgName) : false;
 
-  useEffect(() => {
-    resetView();
-    setIsProcessingLocal(false);
-  }, [currentIndex]);
+  const missingModels = [
+    ...(showYolo && !hasYolo ? ['yolo'] : []),
+    ...(showCrackSam && !hasCrack ? ['cracksam'] : []),
+  ];
+  const isProcessingLocal = missingModels.length > 0 && !processingError;
 
   useEffect(() => {
-      if (!currentImg || is3DModel || isProcessingLocal) return;
-      
-      const modelsToRun = [];
-      if (showYolo && !hasYolo) modelsToRun.push('yolo');
-      if (showCrackSam && !hasCrack) modelsToRun.push('cracksam');
-      
-      if (modelsToRun.length > 0) {
-          setIsProcessingLocal(true);
-          startSingleProcess(currentImg, modelsToRun).finally(() => setIsProcessingLocal(false));
-      }
-  }, [currentIndex, showYolo, showCrackSam, hasYolo, hasCrack, is3DModel, currentImg, isProcessingLocal]);
+    const modelsToRun = [
+      ...(showYolo && !hasYolo ? ['yolo'] : []),
+      ...(showCrackSam && !hasCrack ? ['cracksam'] : []),
+    ].filter(model => !requestedModels.current.has(model));
+    if (modelsToRun.length === 0 || processingError || is3DModel) return;
+    modelsToRun.forEach(model => requestedModels.current.add(model));
+    startSingleProcess(currentImg, modelsToRun)
+      .catch(() => {
+        setProcessingError('Не удалось загрузить маску. Выберите исходник или откройте фото повторно.');
+      });
+  }, [currentImg, showYolo, showCrackSam, hasYolo, hasCrack, is3DModel, processingError, startSingleProcess]);
+
+  useEffect(() => {
+    closeButtonRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'ArrowLeft') onNavigate(-1);
       if (e.key === 'ArrowRight') onNavigate(1);
       if (e.key === 'Escape') onClose();
+      if (e.key === 'Tab') {
+        const controls = [...containerRef.current.parentElement.querySelectorAll('button:not(:disabled)')]
+          .filter(element => element.getClientRects().length > 0);
+        const first = controls[0];
+        const last = controls[controls.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
+        if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -129,29 +142,14 @@ const ImageViewer = ({
   const imageSrcCrack = objectUrls[targetKeyCrack];
 
   const handleSourceClick = () => {
+      setProcessingError(null);
+      requestedModels.current.clear();
       setShowYolo(false);
       setShowCrackSam(false);
   };
 
-  const handleToggleYolo = async () => {
-      const nextState = !showYolo;
-      setShowYolo(nextState);
-      if (nextState && !hasYolo) {
-          setIsProcessingLocal(true);
-          try { await startSingleProcess(currentImg, ['yolo']); } catch(e){}
-          setIsProcessingLocal(false);
-      }
-  };
-
-  const handleToggleCrackSam = async () => {
-      const nextState = !showCrackSam;
-      setShowCrackSam(nextState);
-      if (nextState && !hasCrack) {
-          setIsProcessingLocal(true);
-          try { await startSingleProcess(currentImg, ['cracksam']); } catch(e){}
-          setIsProcessingLocal(false);
-      }
-  };
+  const handleToggleYolo = () => setShowYolo(prev => !prev);
+  const handleToggleCrackSam = () => setShowCrackSam(prev => !prev);
 
   const isSourceOnly = !showYolo && !showCrackSam;
 
@@ -164,15 +162,18 @@ const ImageViewer = ({
       onMouseLeave={is3DModel ? undefined : handleMouseUp}
     >
       {currentIndex > 0 && (
-          <button className="nav-arrow nav-arrow--left" onClick={(e) => { e.stopPropagation(); onNavigate(-1); }}>
+          <button aria-label="Предыдущий снимок" className="nav-arrow nav-arrow--left" onClick={(e) => { e.stopPropagation(); onNavigate(-1); }}>
               <ChevronLeft size={24} />
           </button>
       )}
       {currentIndex < images.length - 1 && (
-          <button className="nav-arrow nav-arrow--right" onClick={(e) => { e.stopPropagation(); onNavigate(1); }}>
+          <button aria-label="Следующий снимок" className="nav-arrow nav-arrow--right" onClick={(e) => { e.stopPropagation(); onNavigate(1); }}>
               <ChevronRight size={24} />
           </button>
       )}
+
+      <button ref={closeButtonRef} className="image-viewer__btn image-viewer__close" onClick={onClose} aria-label="Закрыть просмотр"><X size={18} /></button>
+      {processingError && <div className="image-viewer__error" role="alert">{processingError}</div>}
 
       <div className="image-viewer__container" ref={containerRef} onClick={e => e.stopPropagation()} style={is3DModel ? { padding: 0 } : {}}>
         {imageSrcSource ? (
@@ -182,7 +183,7 @@ const ImageViewer = ({
                     rotationFix={modelRotation === -90 || modelRotation === 270}
                 />
             ) : (
-                (isProcessingLocal || (showYolo && !hasYolo) || (showCrackSam && !hasCrack)) ? (
+                isProcessingLocal ? (
                     <div className="image-viewer__loader">
                         <div className="premium-loader premium-loader--large"></div>
                     </div>
@@ -278,7 +279,7 @@ const ImageViewer = ({
 
           {is3DModel && (
               <>
-                  <button className="image-viewer__btn image-viewer__btn--rotate" onClick={() => setModelRotation(prev => (prev + 90) % 360)} title="Повернуть ось (исправить кривое вращение)">
+                  <button className="image-viewer__btn image-viewer__btn--rotate" onClick={() => setModelRotation(prev => (prev + 90) % 360)} title="Изменить ориентацию модели">
                     <RefreshCw size={18} /> <span>Повернуть ось</span>
                   </button>
                   <div className="image-viewer__divider"></div>
@@ -297,6 +298,18 @@ const ImageViewer = ({
       </div>
     </div>
   );
+};
+
+// Keep layer choices while resetting zoom, drag and request state for each image.
+const ImageViewer = (props) => {
+  const [showYolo, setShowYolo] = useState(false);
+  const [showCrackSam, setShowCrackSam] = useState(false);
+  return <ImageViewerContent
+    key={props.images[props.currentIndex]}
+    {...props}
+    showYolo={showYolo} setShowYolo={setShowYolo}
+    showCrackSam={showCrackSam} setShowCrackSam={setShowCrackSam}
+  />;
 };
 
 export default ImageViewer;

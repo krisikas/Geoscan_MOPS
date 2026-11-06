@@ -1,33 +1,59 @@
-
+# Python environments and generated files
 __pycache__/
 *.py[cod]
 *$py.class
 .venv/
 venv/
 env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.coverage
+.coverage.*
+htmlcov/
+
+# Local configuration; keep templates available for version control
 .env
+.env.*
+!.env.example
+!.env.*.example
+!.env.template
+!.env.sample
+
+# Model weights and runtime data
+*.pt
+*.pth
 backend/weights/*
-
-.idea/
-.vscode/
-*.swp
-.DS_Store
-backend/.DS_Store
-frontend/.DS_Store
-ai_service/.DS_Store
-telemetry_service/.DS_Store
-pioneer_mcp/.DS_Store
-
-docker-compose.override.yml
-
 backend/tmp*/
 backend/data/
 backend/metashape/
 backend/runs/
+frames_history/
+frames_latest/
+metashape_dataset/
+pioneer_mcp/mopsframe.png
 
-frontend/node_modules/
-frontend/dist/
-frontend/.env.local
+# Editors and operating-system metadata
+.idea/
+.vscode/
+*.swp
+.DS_Store
+._*
+.AppleDouble/
+Thumbs.db
+Desktop.ini
 
-
+# Local overrides, logs, and temporary files
+docker-compose.override.yml
+*.log
+*.log.*
 tmp
+
+# Frontend dependencies and build/test output
+node_modules/
+frontend/dist/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo

@@ -87,7 +87,7 @@
   border-color: var(--color-border-hover);
 }
 
-.btn-icon-small {
+.mission-icon-button {
   background: transparent;
   border: 1px solid var(--color-border);
   color: var(--color-text-primary);
@@ -100,31 +100,31 @@
   transition: all var(--transition-fast);
 }
 
-.btn-icon-small:hover {
+.mission-icon-button:hover {
   background: var(--color-border-hover);
 }
 
-.create-project-form {
+.mission-create-project {
   display: flex;
   gap: 8px;
 }
 
-.create-project-form input {
+.mission-create-project input {
   flex: 1;
   padding: 8px 12px;
   border-radius: var(--radius-md);
   border: 1px solid var(--color-border);
-  background: var(--color-bg-primary);
+  background: var(--color-bg-secondary);
   color: var(--color-text-primary);
   font-size: 14px;
   outline: none;
 }
 
-.create-project-form input:focus {
+.mission-create-project input:focus {
   border-color: var(--color-accent);
 }
 
-.create-project-form button {
+.mission-create-project button {
   padding: 8px 16px;
   background: var(--color-accent);
   color: #fff;
@@ -136,7 +136,7 @@
   transition: background var(--transition-fast);
 }
 
-.create-project-form button:hover {
+.mission-create-project button:hover {
   background: var(--color-accent-hover);
 }
 
@@ -472,4 +472,40 @@
 @keyframes typing {
   0%, 80%, 100% { transform: scale(0); opacity: 0.3; }
   40% { transform: scale(1); opacity: 1; }
+}
+
+.mission-page, .start-grid, .chat-container, .map-container,
+.chat-messages, .map-view { min-width: 0; min-height: 0; }
+.chat-container { flex: 1 1 340px; }
+.map-container { flex: 2 1 400px; }
+.chat-header--extended, .chat-input-area, .map-controls { flex-shrink: 0; }
+.chat-header-top { flex-wrap: wrap; gap: 10px; }
+.project-select, .mission-create-project input, .chat-input { min-width: 0; }
+.mission-icon-button { min-width: 36px; min-height: 36px; flex-shrink: 0; }
+.chat-bubble { overflow-wrap: anywhere; }
+.start-flight-btn { flex-shrink: 0; white-space: nowrap; }
+.map-controls > div { flex-wrap: wrap; gap: 12px; }
+.mission-info > div { flex-wrap: wrap; }
+.step-slider-container input { min-width: 0; }
+
+@media (max-width: 1600px) {
+  .mission-page { padding: 24px; }
+  .chat-header--extended, .chat-messages { padding: 20px; }
+  .chat-input-area { padding: 16px; gap: 8px; }
+}
+@media (max-width: 1200px) {
+  .mission-page { padding: 16px; }
+  .start-grid { gap: 16px; }
+  .chat-container { flex-basis: 300px; }
+  .chat-header--extended, .chat-messages, .map-controls { padding: 16px; }
+  .chat-input { padding: 10px; }
+  .start-flight-btn { padding: 12px 16px; }
+}
+@media (max-width: 1000px) {
+  .mission-page { height: auto; min-height: 100dvh; }
+  .start-grid { flex-direction: column; height: auto; }
+  .chat-container { flex-basis: auto; max-width: none; min-height: 420px; }
+  .chat-messages { max-height: 320px; }
+  .map-container { flex-basis: auto; min-height: 500px; }
+  .map-view { min-height: 340px; }
 }

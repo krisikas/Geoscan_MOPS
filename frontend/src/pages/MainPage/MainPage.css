@@ -260,3 +260,26 @@
   border-top: 1px solid var(--color-border);
   margin-top: 40px;
 }
+
+@media (max-width: 1000px) {
+  .main-landing { padding: 0 24px; }
+  .hero-title { font-size: 48px; }
+  .feature-card { padding: 28px 24px; }
+  .feed-item { gap: 32px; }
+  .feed-visual { height: 300px; }
+}
+@media (max-width: 700px) {
+  .main-landing { padding: 0 20px; }
+  .landing-logo { font-size: 16px; gap: 8px; }
+  .logo-icon { height: 24px; }
+  .landing-nav { padding: 20px 0; gap: 12px; }
+  .landing-nav-actions .btn-primary { padding: 10px 16px; }
+  .landing-hero { padding: 64px 0 40px; }
+  .hero-title { font-size: clamp(32px, 7vw, 44px); }
+  .hero-subtitle { font-size: 16px; }
+  .features-grid { grid-template-columns: 1fr; }
+  .landing-features, .landing-feed { padding: 40px 0; }
+  .feed-item, .feed-item.reverse { flex-direction: column; align-items: stretch; gap: 24px; }
+  .feed-visual { flex: none; height: 280px; }
+  .section-title { margin-bottom: 32px; }
+}
